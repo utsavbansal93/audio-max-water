@@ -168,3 +168,29 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 - Two source formats supported: prose and script. Both validate. The script format is clearly easier for user-authored content where they want to *direct* the actor — worth mentioning as a recommended format in README.
 - The parenthetical-stripping rule is aggressive — prose with genuine parenthetical content (e.g., "he said (for the third time) that…") would lose it in validation. Not a problem today but a watch-item. If we hit it, we switch to stripping only parentheticals that sit adjacent to speaker labels.
 - Per-book casts are independent; voice drift across books is expected and correct (Nick sounds different from Austen's narrator; he should).
+
+---
+
+## 0011 · 2026-04-16 · Drama amplification for Kokoro's American voices
+
+**Context.** User confirmed the Gatsby casting was right (Daisy=af_heart, Gatsby=am_onyx) but reported the voices sounded "flat and AI" compared to the British voices in the Austen scenes. The P&P narrator (`bf_isabella`), Darcy (`bm_lewis`), and Elizabeth (`bf_emma`) all felt more alive than Nick (`am_michael`, which was fine) vs. Gatsby/Daisy. The American presets in Kokoro have narrower native pitch range than the British presets — an engine-level fact we can't change without switching engines.
+
+**Options considered.**
+- Switch engine for American characters (Chatterbox with voice cloning) — biggest impact, biggest commitment. Hold in reserve.
+- Push intensity/pace harder in the script — yes, but diminishing returns if the voice itself is the bottleneck.
+- Amplify structural prosody (longer pauses, deeper speed changes, drama-punctuation hints to the synthesizer) — yes, and the biggest free lever we have.
+
+**Decision.** Three-layer amplification, applied to both backends + renderer + script:
+
+1. **Backend pace coefficient widened** from 0.28 → 0.40. `pace: −0.3` now gives ~0.88× speed (was 0.92×). Perceptibly slower on weighty beats.
+2. **Backend intensity deceleration doubled** for peaks (≥ 0.85 → coefficient 0.09). 0.75–0.84 gets a gentler 0.05 coefficient. The peaks audibly *land*.
+3. **Backend drama-punctuation**: for intensity ≥ 0.90 lines ending in `.`/`!`/`?`, append a trailing `…` to what the synthesizer receives. Kokoro tapers the final word into the ellipsis. Script text stays byte-verbatim (the faithful-wording contract lives at the validator, not the backend).
+4. **Renderer pause gains doubled** for intensity-≥0.85 approach and ring-out. Silence becomes the prosodic lever when pitch range runs out.
+5. **Script peak intensities widened** to 0.95–1.0 for Gatsby/Daisy climactic lines; Daisy's intentionally-flat "We haven't met for many years." dropped to 0.35 to maximize contrast with her later tender question at 0.9.
+
+**Consequences.**
+- All changes apply to every scene retroactively — the P&P Reconciliation and Hunsford scenes will re-render with slightly more drama (bench'd to verify no regression).
+- Whisper similarity held at 0.982 on Gatsby (was 0.985) — within noise. QA 23/23 unchanged. RTF actually improved to 0.13 due to per-call model cache + the shorter overall per-sentence compute.
+- If the drama amp is still not enough for the user's ear, the next escalation is genuinely swapping the engine (Chatterbox with Kokoro-generated or LibriVox-sourced reference clips for the three American voices). That's a different DECISIONS entry when we get there.
+
+**Retrospective lesson.** *Engine expressiveness is non-uniform across its own voice library.* Don't treat a TTS model as "one expressive profile" — each voice can have markedly different prosodic range. When one voice sounds flat, compare it to its siblings before blaming the engine. And when the engine is genuinely the ceiling, compensate with *structural* prosody (silence, pace contrast, punctuation hints) before biting the cost of a new engine.

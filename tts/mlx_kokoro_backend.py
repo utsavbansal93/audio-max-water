@@ -60,19 +60,26 @@ class MLXKokoroBackend(TTSBackend):
         text = _pronounce(text)
 
         # Same emotion → speed mapping as the torch backend so A/B renders
-        # are apples-to-apples.
+        # are apples-to-apples. See kokoro_backend.py for the reasoning
+        # behind the 0.40 coefficient + intensity steps.
         effective_speed = speed * self._default_speed
         if emotion is not None:
-            effective_speed *= 1.0 + 0.28 * emotion.pace
-            if emotion.intensity >= 0.75:
-                effective_speed *= 1.0 - 0.04 * (emotion.intensity - 0.5)
+            effective_speed *= 1.0 + 0.40 * emotion.pace
+            if emotion.intensity >= 0.85:
+                effective_speed *= 1.0 - 0.09 * (emotion.intensity - 0.5)
+            elif emotion.intensity >= 0.75:
+                effective_speed *= 1.0 - 0.05 * (emotion.intensity - 0.5)
+
+        text_for_synth = text
+        if emotion is not None and emotion.intensity >= 0.90 and text.rstrip().endswith((".", "!", "?")):
+            text_for_synth = text.rstrip() + "…"
 
         voice = self._voices_by_id.get(voice_id)
         lang = _ACCENT_TO_LANG.get(voice.accent, "a") if voice else "a"
 
         with tempfile.TemporaryDirectory(prefix="mlx_tts_") as td:
             self._gen(
-                text=text,
+                text=text_for_synth,
                 model=self._model,
                 voice=voice_id,
                 speed=effective_speed,
