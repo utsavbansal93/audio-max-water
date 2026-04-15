@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio-max-water"
+version = "0.1.0"
+description = "Story to full-cast audiobook (.m4b) pipeline"
+requires-python = ">=3.12"
+dependencies = [
+  "kokoro>=0.9",
+  "soundfile>=0.13",
+  "numpy>=2.0",
+  "pydantic>=2.10",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+chatterbox = ["chatterbox-tts"]
+xtts = ["TTS"]
+ui = ["fastapi", "uvicorn[standard]", "python-multipart"]
+
+[tool.setuptools.packages.find]
+include = ["tts*", "pipeline*", "ui*"]

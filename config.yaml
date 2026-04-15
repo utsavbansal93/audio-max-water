@@ -1,0 +1,33 @@
+# Pipeline configuration
+
+# Which TTS backend to use: kokoro | chatterbox | xtts
+backend: kokoro
+
+# Output
+output:
+  sample_rate: 24000          # Kokoro native; Chatterbox/XTTS resampled to this
+  m4b_bitrate: 96k             # AAC bitrate for final .m4b
+  paragraph_pause_ms: 500      # silence between paragraphs
+  scene_pause_ms: 1200         # silence at scene breaks (* * * or blank lines)
+  line_pause_ms: 180           # silence between consecutive lines same paragraph
+
+# Determinism
+seed: 42
+
+# Paths (relative to repo root)
+paths:
+  stories: stories
+  build: build
+  samples: samples
+  voice_samples: voice_samples    # reference clips (Chatterbox/XTTS)
+  out: out
+
+# Kokoro-specific
+kokoro:
+  lang_code: a                 # 'a' = American English, 'b' = British
+  default_speed: 1.0
+
+# Chatterbox-specific (used only when backend: chatterbox)
+chatterbox:
+  exaggeration_default: 0.5    # 0 = flat, 1 = theatrical
+  cfg_weight: 0.5
