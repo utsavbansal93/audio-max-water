@@ -206,7 +206,11 @@ def render_all(
     cast = CastModel.model_validate(json.loads(cast_path.read_text()))
     build_dir = build_dir or (REPO / "build")
 
-    backend_name = backend_name or cast.backend
+    # Backend resolution order: explicit arg > config.yaml > cast.json.
+    # cast.backend is informational (which engine originally produced the
+    # voice-ID choices), not a hard binding — Kokoro and MLX-Kokoro share
+    # the same voice IDs so swapping is free.
+    backend_name = backend_name or CFG.get("backend") or cast.backend
     backend = get_backend(backend_name)
 
     errs = check_voice_consistency(script, cast, {v.id for v in backend.list_voices()})

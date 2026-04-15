@@ -15,6 +15,9 @@ def get_backend(name: str, **kwargs: Any) -> TTSBackend:
     if name == "kokoro":
         from .kokoro_backend import KokoroBackend
         return KokoroBackend(**kwargs)
+    if name in ("mlx-kokoro", "mlx_kokoro"):
+        from .mlx_kokoro_backend import MLXKokoroBackend
+        return MLXKokoroBackend(**kwargs)
     if name == "chatterbox":
         from .chatterbox_backend import ChatterboxBackend  # noqa: PLC0415
         return ChatterboxBackend(**kwargs)

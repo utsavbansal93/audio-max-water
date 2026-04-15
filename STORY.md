@@ -141,3 +141,27 @@ Three questions, each pointing at a real hole in how I was working.
 **Concept bucket (added).**
 - *QA-threshold calibration against distribution, not spec* — audiobook "standards" assume whole chapters; our lines are fragments. Thresholds have to match the unit being measured.
 - *The cross-scene consistency dividend* — the cost of treating `cast.json` as authoritative was a small schema decision on Day 1. The dividend is every future scene reusing it for free, forever. This is how data contracts compound.
+
+---
+
+## 2026-04-16 · Day 1 (iteration 5) — MLX-Kokoro, and the trap of trusting a first benchmark
+
+**What you asked for.** Flip to MLX-Audio for Apple-Silicon-native inference.
+
+**The expected result.** My research note (DECISIONS #0008) predicted "2-3× faster on M3." My first benchmark showed the opposite: RTF jumped from torch's 0.21 → MLX's 0.47. *Slower*.
+
+**Why.** `mlx_audio.tts.generate.generate_audio` accepts `model=<repo-id string>` *or* a pre-loaded `nn.Module`. If you pass a string, it calls `load_model(model_path=...)` — the full 82M-param weight load — on *every* call. Batched TTS calls `generate_audio` N times per chapter, so the model was being re-instantiated from bf16 weights 16 times for the Reconciliation scene. All the MLX Metal speedup was swamped by per-call allocation.
+
+The fix was three lines: load once in `MLXKokoroBackend.__init__`, pass the instance. Result: RTF 0.21 → **0.15** on Reconciliation, 0.23 → **0.19** on Hunsford. ~27% faster, matching the "cheap speedup" the research predicted. *And* Whisper similarity jumped on both scenes (0.973 → 0.989, 0.986 → 0.992). MLX's Metal path produces subtly cleaner output.
+
+**What I got wrong.** I shipped the "it's slow" result to the bench log before investigating. That row stays in `BENCHMARKS.md` — it's useful evidence of the failure mode. But I should have investigated the slowdown before reporting it, not after. The "trust but verify" bias is present in benchmarking too: *a benchmark that contradicts a well-founded prediction is usually a measurement bug, not a prediction bug — investigate before trusting*.
+
+**What this teaches.**
+- *The API-default trap.* Libraries default to "convenient for a single call" (pass a string, we'll load it for you). That default kills batched users. Every inference library deserves a quick grep for `load_model` in the generate function before you trust a benchmark.
+- *Research predictions are diagnostic.* DECISIONS #0008 said "2-3× faster." The benchmark said "2× slower." A 4-6× gap between prediction and measurement is almost always a bug in the measurement (or in the integration). Treat wide deltas as alarms, not data.
+- *Keep the failed benchmark row.* Deleting a failed iteration's row from `BENCHMARKS.md` would hide evidence of the API-default trap for future sessions. The log is a record of *what happened*, not a highlight reel. Future-me reading this in six months will learn the lesson from seeing the slow row next to the fast row.
+
+**Concept bucket (added).**
+- *The batched-use-default mismatch pattern* — every inference library ships with a one-shot-convenient default that kills batched users. Symptom: first-run benchmarks radically worse than documented numbers. Fix: always hoist model loading out of the per-call path.
+- *Benchmark prediction deltas as alarms* — when measurement and prediction disagree by more than ~2×, suspect the measurement. A silent 30% regression is noise; a 4× regression is a story.
+- *The "keep failed rows" discipline* — benchmark logs are evidence records, not marketing. The slow row teaches future readers what the fix was.

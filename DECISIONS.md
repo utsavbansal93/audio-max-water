@@ -126,3 +126,21 @@ Lightweight ADR log. Format per entry: **Context / Options / Decision / Conseque
 **Consequences.** We were moving without knowing what we were missing. Correcting that now via research and adding one at a time, each behind the swappable backend interface so we can A/B without pipeline changes.
 
 **Retrospective lesson.** Always run the tool-search / web-search step *before* committing to a primary dependency. "Going from training knowledge" is a cheap-looking choice that accumulates as invisible tech debt.
+
+---
+
+## 0009 · 2026-04-16 · MLX-Kokoro as the new default backend
+
+**Context.** `DECISIONS.md #0008` identified MLX-Audio as the expected cheap speedup on M3. First implementation actually ran 2× slower than the torch path (RTF 0.47 vs 0.21) — because `mlx_audio.tts.generate.generate_audio` calls `load_model(model_path=<string>)` on every invocation when you pass the repo-id. We were re-loading the 82M model per line.
+
+**Options considered.**
+- Accept the slowdown (MLX still gave cleaner Whisper round-trip 0.989 vs 0.973) — worse performance for slightly better faithfulness is a bad trade.
+- Replace `generate_audio` with a direct pipeline wrapper — more code to maintain.
+- Load the model once in `MLXKokoroBackend.__init__` and pass the instance to `generate_audio` — the function accepts both strings and `nn.Module` instances.
+
+**Decision.** Load once in `__init__`, pass instance. Result: RTF dropped to 0.15 (vs torch 0.21) on the Reconciliation scene and 0.19 (vs torch 0.23) on Hunsford. ~27% speedup. Same QA pass rate. Whisper similarity higher on both scenes (0.989 / 0.992 vs 0.973 / 0.986).
+
+**Consequences.**
+- `config.yaml` default is now `mlx-kokoro`; torch `kokoro` remains as a swappable backend.
+- The `cast.json` produced under `kokoro` is reused as-is (same voice IDs, same weights) — the render resolution order now explicitly treats `cast.backend` as informational.
+- Retrospective lesson: *first implementation of a new backend is almost always held back by a default that doesn't fit batched use*. Always inspect the inference entry point for per-call allocation / loading before trusting benchmarks.

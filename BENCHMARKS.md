@@ -24,3 +24,6 @@ Automated rows are appended by `pipeline/bench.py`. Manual rows are fine for one
 | fe387b6 | 2026-04-16 | kokoro | pp_final_reconciliation ch01 | 9 | 257 | ~45 | ~82 | ~0.55 | n/a | n/a | Emotion-aware pauses, wider pace range, split rhetorical beats. Cast: Isabella/Lewis/Emma. Audio grew from padding + slower pace on weighty lines. |
 | fe387b6 | 2026-04-16 | kokoro | pp_final_reconciliation ch01 | 16 | 186 | 17.1 | 81.6 | 0.21 | 16/16 | 0.973 | narrator-pause fix + inline-tag detection + Kokoro slash pronunciation fix + QA pass |
 | c081879 | 2026-04-16 | kokoro | pp_hunsford_proposal ch01 | 13 | 177 | 16.6 | 72.2 | 0.23 | 11/13 | 0.986 | new scene test — Darcy passionate+arrogant, Elizabeth icy lethal reply; first hearing of Elizabeth (Emma) in dialogue |
+| 993b61e | 2026-04-16 | mlx-kokoro | pp_final_reconciliation ch01 | 16 | 186 | 38.0 | 81.2 | 0.47 | 16/16 | 0.989 | MLX-Kokoro backend — same weights via MLX inference path on Apple Silicon |
+| 993b61e | 2026-04-16 | mlx-kokoro | pp_final_reconciliation ch01 | 16 | 186 | 12.4 | 81.2 | 0.15 | 16/16 | 0.989 | MLX-Kokoro with model loaded once in __init__ (fix per-call reload) |
+| 993b61e | 2026-04-16 | mlx-kokoro | pp_hunsford_proposal ch01 | 13 | 177 | 13.7 | 71.6 | 0.19 | 12/13 | 0.992 | MLX-Kokoro on Hunsford scene |

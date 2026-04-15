@@ -74,8 +74,10 @@ Not yet. Layered on after the CLI is solid.
 Edit `config.yaml`:
 
 ```yaml
-backend: kokoro    # or: chatterbox, xtts
+backend: mlx-kokoro    # default. Others: kokoro (torch), chatterbox, xtts
 ```
+
+`mlx-kokoro` and `kokoro` share the Kokoro-82M weights and voice IDs, so swapping between them reuses `cast.json` with no changes. Current benchmarks on M3 (16 GB): MLX-Kokoro RTF ~0.15, torch Kokoro RTF ~0.21.
 
 No pipeline code changes. Backends that need reference audio (Chatterbox, XTTS) read clips from `voice_samples/<character>.wav`.
 
