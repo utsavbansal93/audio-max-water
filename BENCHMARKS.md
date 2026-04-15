@@ -27,3 +27,4 @@ Automated rows are appended by `pipeline/bench.py`. Manual rows are fine for one
 | 993b61e | 2026-04-16 | mlx-kokoro | pp_final_reconciliation ch01 | 16 | 186 | 38.0 | 81.2 | 0.47 | 16/16 | 0.989 | MLX-Kokoro backend — same weights via MLX inference path on Apple Silicon |
 | 993b61e | 2026-04-16 | mlx-kokoro | pp_final_reconciliation ch01 | 16 | 186 | 12.4 | 81.2 | 0.15 | 16/16 | 0.989 | MLX-Kokoro with model loaded once in __init__ (fix per-call reload) |
 | 993b61e | 2026-04-16 | mlx-kokoro | pp_hunsford_proposal ch01 | 13 | 177 | 13.7 | 71.6 | 0.19 | 12/13 | 0.992 | MLX-Kokoro on Hunsford scene |
+| 723c050 | 2026-04-16 | mlx-kokoro | gatsby_west_egg_reunion ch01 | 23 | 306 | 22.2 | 125.3 | 0.18 | 23/23 | 0.985 | New book (Gatsby), new cast (Nick/Gatsby/Daisy as am_michael/am_onyx/af_heart), script-format source with stage-direction parentheticals → emotion.notes; extended validator |

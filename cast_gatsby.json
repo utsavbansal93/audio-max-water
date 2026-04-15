@@ -1,0 +1,8 @@
+{
+  "backend": "mlx-kokoro",
+  "mapping": {
+    "narrator": "am_michael",
+    "Gatsby": "am_onyx",
+    "Daisy": "af_heart"
+  }
+}

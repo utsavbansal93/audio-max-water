@@ -13,17 +13,35 @@ from pathlib import Path
 from pipeline.schema import CastModel, ScriptModel
 
 
+_SPEAKER_LABEL_RE = re.compile(
+    r"(?m)^\s*(?:Narrator|[A-Z][A-Za-z]{1,19}(?:\s[A-Z][A-Za-z]{1,19})?):\s*"
+)
+_STAGE_DIRECTION_RE = re.compile(r"\([^)]*\)")
+
+
 def _normalize(s: str) -> str:
-    """Whitespace-normalize, strip markdown syntax (but keep heading text)."""
-    # Strip leading '#' chars from headings but keep the text itself, so the
-    # narrator can speak chapter titles and still match the source.
+    """Whitespace-normalize, strip markdown syntax, speaker labels, and stage
+    directions so both prose-form and script-form sources can be compared
+    against the reconstructed-from-script.json text.
+
+    Rules:
+      - Markdown heading prefixes (`# `, `## `) stripped; heading text kept.
+      - Horizontal rules / scene separators dropped.
+      - Speaker labels at line start (`Narrator:`, `Gatsby:`, `Mr. Darcy:`)
+        stripped — they're attribution metadata, not spoken text.
+      - Parentheticals `(…)` stripped — treated as stage directions that feed
+        emotion.notes in script.json rather than being spoken. This is
+        aggressive; it means prose with genuine parenthetical content would
+        need a different source format.
+      - Quotation marks (straight and curly) stripped.
+      - Whitespace collapsed.
+      - Lowercased.
+    """
     s = re.sub(r"(?m)^\s*#{1,6}\s+", "", s)
-    # Drop horizontal rules / scene separators.
     s = re.sub(r"(?m)^\s*[\*\-_]{3,}\s*$", "", s)
-    # Drop quotation marks — dialogue attribution strips them when splitting
-    # lines into speaker-tagged pieces.
+    s = _SPEAKER_LABEL_RE.sub("", s)
+    s = _STAGE_DIRECTION_RE.sub(" ", s)
     s = re.sub(r"[\u201c\u201d\u2018\u2019\"']", "", s)
-    # Collapse whitespace.
     s = re.sub(r"\s+", " ", s)
     return s.strip().lower()
 

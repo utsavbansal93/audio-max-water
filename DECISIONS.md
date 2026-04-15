@@ -144,3 +144,27 @@ Lightweight ADR log. Format per entry: **Context / Options / Decision / Conseque
 - `config.yaml` default is now `mlx-kokoro`; torch `kokoro` remains as a swappable backend.
 - The `cast.json` produced under `kokoro` is reused as-is (same voice IDs, same weights) — the render resolution order now explicitly treats `cast.backend` as informational.
 - Retrospective lesson: *first implementation of a new backend is almost always held back by a default that doesn't fit batched use*. Always inspect the inference entry point for per-call allocation / loading before trusting benchmarks.
+
+---
+
+## 0010 · 2026-04-16 · Per-book cast files + script-format source support
+
+**Context.** User submitted a Great Gatsby scene — different book, different character set (Nick, Gatsby, Daisy), different accent (American), and in *script format* rather than prose (`Narrator:` / `Gatsby:` speaker labels, `(stage direction)` parentheticals before dialogue). The existing `cast.json` was hard-wired to P&P's characters; the validator was built for prose sources.
+
+**Options considered.**
+- One global `cast.json` with all characters across all books — short-term simple, but breaks the one-voice-per-character contract because `narrator` would collide (the voice for P&P's narrator is not the voice for Nick Carraway).
+- Nested `cast.json` keyed by book — requires schema version bump and a way to select the book at render time.
+- Per-book `cast_<book>.json` files at repo root; select via `--cast` flag on pipeline commands.
+
+**Decision.** Per-book cast files. `cast.json` stays as the default (P&P), `cast_gatsby.json` joins it. Simple, no schema churn, and the voice-consistency contract now holds *per book* — which is what it should have been from the start.
+
+**Separately on script-format sources.** Extended `pipeline/validate.py::_normalize` with two rules:
+- Strip line-start speaker labels matching `^\s*[A-Z][A-Za-z]+:\s*` (handles `Narrator:`, `Gatsby:`, `Mr. Darcy:`, etc.).
+- Strip all `(…)` parentheticals — they're treated as stage directions that feed `emotion.notes` in `script.json` rather than being spoken.
+
+The stage-direction-to-emotion mapping is where the format earns its keep: the user wrote `(In a hollow, automatic voice)` before Gatsby's "Five years next November," and I transcribed that directly into the line's `emotion.notes` — the LLM parser (me) already had explicit direction, no guessing required. When prose-form sources are given (Austen), `emotion.notes` is authored from book context instead.
+
+**Consequences.**
+- Two source formats supported: prose and script. Both validate. The script format is clearly easier for user-authored content where they want to *direct* the actor — worth mentioning as a recommended format in README.
+- The parenthetical-stripping rule is aggressive — prose with genuine parenthetical content (e.g., "he said (for the third time) that…") would lose it in validation. Not a problem today but a watch-item. If we hit it, we switch to stripping only parentheticals that sit adjacent to speaker labels.
+- Per-book casts are independent; voice drift across books is expected and correct (Nick sounds different from Austen's narrator; he should).

@@ -165,3 +165,34 @@ The fix was three lines: load once in `MLXKokoroBackend.__init__`, pass the inst
 - *The batched-use-default mismatch pattern* — every inference library ships with a one-shot-convenient default that kills batched users. Symptom: first-run benchmarks radically worse than documented numbers. Fix: always hoist model loading out of the per-call path.
 - *Benchmark prediction deltas as alarms* — when measurement and prediction disagree by more than ~2×, suspect the measurement. A silent 30% regression is noise; a 4× regression is a story.
 - *The "keep failed rows" discipline* — benchmark logs are evidence records, not marketing. The slow row teaches future readers what the fix was.
+
+---
+
+## 2026-04-16 · Day 1 (iteration 6) — Gatsby: new book, new format, new cast, new failure mode found
+
+**What you asked for.** Run The Great Gatsby's reunion-at-West-Egg scene through the pipeline. And three process-corrections mid-flight: don't auto-play output, explain what the Whisper and RTF numbers actually mean, and do the actual work.
+
+**Process-correction captured as durable memory.** No auto-play. Saved as a feedback memory with the "why" (user said "jarring") so future sessions won't regress. The pattern to notice: *I was ending bash calls with `afplay &` to be helpful, but "helpful" needs to match the user's attention model, not my own sense of completion*. When the output is a long audio file, handing the path back IS the completion signal — playback is a separate decision the user owns.
+
+**The two number-explanations (for the STORY log, since they're concepts):**
+- *Whisper similarity is a faithful-rendering check, not an audio-quality check.* Transcribe the output back to text, diff against script. It catches content defects — dropped words, mispronunciations like "Lydia/Wickham" → "slash Wickham" — but cannot judge emotion, naturalness, or timing. It is a *cheap second opinion*, the "Whisper-round-trip pattern" at work.
+- *RTF = render wall-clock / audio duration.* The ratio that tells you whether your pipeline scales to real projects. At RTF 0.15 a 10-hour novel renders in 1.5 hours of compute. A team that cared about this in 2020 — like Netflix's dubbing pipeline — would have built the whole stack around keeping RTF low. For us it's a sanity dial.
+
+**What was new about Gatsby.**
+- *Different voice register.* Nick, Gatsby, Daisy are all American; the existing `cast.json` is British Austen. Per-book cast files were the obvious answer (`cast_gatsby.json` at repo root, selected via `--cast` flag). The voice-consistency contract holds *per book*, which it always should have.
+- *Script-format source.* User wrote `Narrator:`, `Gatsby:`, and stage directions in parentheses. Prose-form validator would fail. Extended `_normalize` to strip speaker labels and `(…)` parentheticals. Old Austen scenes still validate — the additions are only removing content that wasn't present before.
+- *Stage directions as direct actor direction.* This was the unexpected dividend. Instead of me inferring Daisy's emotion from context, user wrote `(Her voice as matter-of-fact as it could ever be)` — an explicit direction which I transcribed verbatim into `emotion.notes`. **The script format collapses the parse step's guesswork** — user is already directing, I just map it. Arguably the script format should be the default when user is doing original writing: give the actor direction, don't make the LLM guess.
+
+**Casting.** I picked `am_michael` for Nick (warm + authoritative adult American male — "warm observer" register), `am_onyx` for Gatsby (deep, smooth — Gatsby's charm has gravity), `af_heart` for Daisy (warm, expressive, young — closest Kokoro preset to Fitzgerald's "voice full of money"). Did not auto-play. The user will listen and decide.
+
+**Bench.** RTF 0.18, QA 23/23, Whisper 0.985. The highest-line-count scene yet (23 lines) and still passed every mechanical check.
+
+**What this teaches.**
+- *"Source format" is a lever worth offering.* Prose is right for translating existing published work; script format is right for original writing where the user wants to direct the acting. The pipeline now handles both via one validator change. Mentioning this in README as a recommended-format choice.
+- *The autopilot-vs-attention mistake.* My default of `afplay &` at the end of render scripts was an autopilot habit that didn't match the user's attention model. The lesson isn't "never play audio" — it's "confirm the user's attention expectation before inserting the output into their ears." Same rule applies to anything with sensory attention cost (notifications, interrupting video, vibration, etc.).
+- *Numeric metrics need narrative context the first time they appear.* I shipped `Whisper 0.973` and `RTF 0.21` in earlier iterations without explaining what they meant. User had to ask. When introducing a new metric, explain what good/bad looks like *at the first appearance*, not when asked.
+
+**Concept bucket (added).**
+- *Script format vs prose format as a source-language choice* — a DSL decision with real consequences: script format hands emotion direction to the user, prose hands it to the LLM. Choose per use case.
+- *Attention-cost defaults* — any automated action that hits a sensory channel (audio output, flashing UI, vibration) deserves an opt-in default, not an opt-out default.
+- *Explain-at-introduction for new metrics* — the time to explain a measurement is when it first appears in a log, not when someone asks later. Same applies to new symbols, abbreviations, thresholds.

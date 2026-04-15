@@ -11,6 +11,25 @@ Turn Claude-written stories into narrated `.m4b` audiobooks with a distinct voic
 
 Wording is kept byte-verbatim from the source. Voice-per-character is locked in `cast.json` and reused across chapters.
 
+## Source format
+
+Two formats are supported for `stories/*.md`:
+
+**Prose** (for translating published work):
+```
+"If you will thank me," he replied, "let it be for yourself alone…"
+```
+Dialogue attribution (`, he said`) is parsed by Claude Opus from context. Emotion is inferred from the text and a `book_context` block.
+
+**Script** (recommended for original writing):
+```
+Gatsby: (In a hollow, automatic voice) Five years next November.
+Daisy:  (Her voice as matter-of-fact as it could ever be) We haven't met for many years.
+```
+Speaker labels (`Gatsby:`, `Daisy:`) and parenthetical stage directions (`(In a hollow…)`) are stripped by the validator before the faithful-wording diff. The parentheticals become `emotion.notes` in `script.json` — so the user directs the actor explicitly rather than asking the LLM to guess.
+
+Both formats pass the same faithful-wording contract.
+
 ## Requirements
 
 - macOS on Apple Silicon (tested on M3 16 GB)
