@@ -223,3 +223,33 @@ The fix was three lines: load once in `MLXKokoroBackend.__init__`, pass the inst
 - *Know the inputs before tuning the outputs.* The cost of this mistake was one iteration of scaffolding around a dead-end component. The habit to build: for any component you're about to tune, write down its actual input surface from the docs — not from memory, not from what you wish it had. The knob you want may not exist, and you'll have saved a cycle.
 - *Revert discipline.* When a change doesn't meet its stated goal, the first move is to take it out. If some *part* of the change was useful for an unrelated reason, that's a separate, smaller PR with its own justification. Don't keep noise in the codebase because some fraction of it accidentally helped.
 - *Narrow the commitment when part of the system already works.* Hybrid is Option D because Option A (full swap) would unnecessarily replace a working component (Kokoro narrators). When something is genuinely working, don't touch it — upgrade only the broken part.
+
+---
+
+## 2026-04-16 · Day 1 (iteration 9) — hybrid Chatterbox ships on branch
+
+**Where this happened.** All of iteration 9 is on the `claude/hybrid-chatterbox` branch (worktree at `.claude/worktrees/hybrid-chatterbox`). `main` continues evolving in parallel — a separate Claude Code session is building out *Salt and Rust* there with scene-break support and per-story config overrides. Both branches diverge, both advance, both will reconcile at merge time. The worktree design paid off on its first real use.
+
+**What shipped on this branch.**
+
+- `tts/chatterbox_backend.py`. The Chatterbox TTS engine finally behind our `TTSBackend` ABC. `Emotion.intensity` maps to `exaggeration` ∈ [0.30, 0.95], giving our emotion field its first concrete mechanical effect. `Emotion.pace` post-processes via ffmpeg `atempo` — Chatterbox has no native speed knob. Voice id = filename stem in `voice_samples/`.
+- Cast schema extended: `{character: {voice, backend}}` is now a valid value, with a backward-compat shim that reads bare strings as "voice id at the cast's default backend." `cast.resolve(speaker)` is the single access point.
+- Per-speaker backend resolution in `pipeline/render.py`. A chapter can mix engines; each engine loads exactly once via `_get_backend_cached`. Same pattern from DECISIONS #0009 (MLX) reused at the dispatch layer.
+- LibriVox Dramatic Reading v5 of *The Great Gatsby* mined for reference clips. Used `faster-whisper` word-level timestamps to align our known script lines against the 29-min chapter 5 audio, then hand-picked single-voice passages: Tomas Peter's Gatsby at minute 18 describing his house; Jasmin Salma's Daisy at minute 22 crying over the shirts. Both clips are 8–10 s, both PD, attribution in `voice_samples/SOURCES.md`.
+- `cast_gatsby.json` updated: narrator = `am_michael` (Kokoro), Gatsby = `gatsby_ref` (Chatterbox), Daisy = `daisy_ref` (Chatterbox).
+- First hybrid render of the West Egg reunion scene. RTF 1.13 (Chatterbox's diffusion sampling is ~10× heavier per line than Kokoro's non-AR path — but only 10 of the 23 lines hit Chatterbox). QA 23/23. Whisper 0.989. Output at `out/The_Reunion_at_West_Egg.m4b`.
+
+**The one macOS-specific landmine.** After a Chatterbox render, Python interpreter shutdown tripped SIGBUS inside `_sentencepiece.cpython-312-darwin.so` — destructor bug in the native tokenizer against the torch 2.6 + numpy 1.26 stack Chatterbox forces. The work completed; the process exit crashed. macOS showed the user a "Python quit unexpectedly" dialog. User flagged it mid-iteration: *"Getting 'python quit unexpectedly errors on the mac, is everything ok?"* Diagnosed in about 90 seconds via crash-log inspection. Workaround: `install_clean_exit_hook()` in Chatterbox's `__init__` registers an atexit `os._exit(0)` that bypasses the broken destructor path. Hard-exit is a blunt tool, but the work is already done; nothing legitimate runs in atexit for this pipeline. Documented in DECISIONS #0014 as periodically-recheckable (the hook becomes dead code if sentencepiece ships a fix).
+
+**The casting tree is now information-dense.** For a character we need to cast:
+- If the character is a narrator or fits Kokoro's existing voice library well, Kokoro works and costs nothing.
+- If the character has a dramatic-reading LibriVox recording available, Chatterbox + reference-clip clone gives us a real actor's voice amplified by our emotion slider.
+- If neither — we're back in Kokoro-ceiling territory for that character, and we either source a reference by other means or accept the flatness.
+
+The hybrid cast schema makes this a per-character decision, not a per-book decision.
+
+**Concept bucket (added).**
+- *Worktree-based parallel evolution.* When a branch will take hours and main has other work in flight, the worktree is worth its setup cost every time. `main` and `claude/hybrid-chatterbox` both evolved today without touching each other's files. Merge complexity is deferred, not eliminated; but the cost is paid once at merge time instead of continuously during development.
+- *Reference audio as a casting currency.* With voice-cloning engines, casting decisions become *where can I source 10 seconds of someone who sounds like this character acting this way*. LibriVox's Dramatic Reading subcategory turns out to be a goldmine for PD fiction: cast-voiced books where each actor already has sustained dialogue in the role. Future audiobook work should assume this resource exists for canon works.
+- *The crash-dialog fix as user-care.* A technically-fine render that crashes on exit is *not* a shipping-quality deliverable if the user sees a system alert. "It works" includes "it exits cleanly." Diagnosing and fixing takes minutes; ignoring would have left the product feeling broken. Worth the hook.
+- *Destructor-time bugs are almost always an ABI story.* The ABI mismatch between sentencepiece's compiled extension and the rest of the stack is the real cause; `os._exit` is a symptom fix. When this comes up elsewhere, the permanent fix is at the dep-resolution layer, not the application layer.

@@ -194,3 +194,77 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 - Future path open: Sesame CSM is a drop-in addition under the same ABC when/if Chatterbox hits a ceiling of its own.
 
 **Retrospective lesson.** *Before tuning a component, know its inputs.* I spent an iteration tuning prosody around Kokoro before re-reading its architecture note — if I had re-read earlier, I would have stopped at "Kokoro takes text + speed, nothing else" and escalated to Chatterbox immediately. The rule to internalize: *when a component's output lacks a property, check whether the component has an input for that property before trying to compensate around it.*
+
+---
+
+## 0012 · 2026-04-16 · Cast schema: `str | CastEntry` with backward-compat
+
+**Context.** Option D needs per-character backend assignment (Kokoro narrator + Chatterbox characters). The prior schema was `dict[str, str]`.
+
+**Options considered.**
+- New shape, break legacy: `dict[str, CastEntry]`. Forces rewriting every existing cast.json. Simple code, breaks change.
+- Union shape, keep legacy readable: `dict[str, str | CastEntry]` with a `resolve()` helper that applies the `str → CastEntry(voice=s, backend=cast.backend)` shim at access time.
+- Parallel `extended_mapping` dict: additive, ugly, two places to look.
+
+**Decision.** Union shape + `resolve()`. All existing P&P casts keep parsing unchanged; only Gatsby's cast file uses the expanded form.
+
+**Consequences.**
+- `cast.resolve(speaker)` is the single entry point for reading the mapping. `pipeline/render.py::render_chapter` uses it; direct reads of `cast.mapping[speaker]` (legacy style) would skip the shim and see raw `str | CastEntry` — one place did this in the old `check_voice_consistency`; the new `render_all` validator uses `resolve()`.
+- When the user eventually migrates everything to the expanded form, the `str` branch becomes dead code, removable in one PR with no runtime change.
+
+---
+
+## 0013 · 2026-04-16 · LibriVox Dramatic Reading for reference clips
+
+**Context.** Chatterbox needs 5–15s single-voice reference clips per character. Options for sourcing vary in cost and quality.
+
+**Options considered.**
+- **Self-recorded** — impossible in this environment (no mic access) and would miss the "character-appropriate" acting quality anyway.
+- **Bundled Chatterbox example voices** — not character-specific; sanity-check only.
+- **Kokoro-seeded** — generate Kokoro output, clone from it. Circular and inherits Kokoro's flatness. Useless for our problem.
+- **LibriVox solo reading** — one reader voices all characters; their "Gatsby" is still their own voice with acting, not a distinct timbre. Better than Kokoro-seeded, not great.
+- **LibriVox Dramatic Reading** — different readers per role. LibriVox v5 of *The Great Gatsby* is exactly this: Tomas Peter as Gatsby, Jasmin Salma as Daisy, TJ Burns as Nick. Real acted performances by different people, PD, free.
+
+**Decision.** LibriVox Dramatic Reading. Chapter 5 has both Gatsby and Daisy speaking the scenes they need to. Extracted 7.9s / 9.3s clips using `faster-whisper` word-level alignment against our known script lines.
+
+**Consequences.**
+- Each character voice is now rooted in a real actor's performance, amplified by Chatterbox's `exaggeration` slider for the specific line-level emotion we want.
+- Licensing trail is clean (both text and recording are PD; attribution logged in `voice_samples/SOURCES.md` for audit).
+- Future characters from other PD-audiobooked works are sourceable by the same pattern. Characters from works not in PD (or without dramatic readings) need a different sourcing strategy — we don't have one yet; flag this when it comes up.
+
+---
+
+## 0014 · 2026-04-16 · Hard-exit on Chatterbox shutdown to suppress macOS crash dialog
+
+**Context.** After loading Chatterbox, normal Python interpreter shutdown triggers SIGBUS inside `_sentencepiece.cpython-312-darwin.so` (KERN_PROTECTION_FAILURE). The work has already completed; this is a destructor-path bug in the native module under the torch 2.6 + numpy 1.26 stack Chatterbox forces. macOS surfaces it as a "Python quit unexpectedly" dialog. User flagged this as alarming.
+
+**Options considered.**
+- **Downgrade sentencepiece** to an older wheel — lots of compat risk with transformers/tokenizers.
+- **Patch sentencepiece from source** — time-expensive and fragile.
+- **Register `atexit(os._exit(0))`** in the Chatterbox backend's `__init__` — skips Python's normal shutdown (including the broken destructor) and exits the process hard. Work is already done by the time atexit runs.
+- **Ignore** — user-facing dialog is bad UX, not acceptable.
+
+**Decision.** `install_clean_exit_hook()` in `tts/chatterbox_backend.py`, called from `ChatterboxBackend.__init__` before the model load. Only processes that actually load Chatterbox get the hard-exit behavior; Kokoro-only runs keep normal Python shutdown.
+
+**Consequences.**
+- No more crash dialog after Chatterbox renders.
+- `os._exit(0)` skips any user-registered atexit handlers or module finalizers. Current pipeline doesn't rely on those, but anyone adding background-thread cleanup or telemetry-flush hooks needs to know they'll be skipped in Chatterbox-using processes.
+- If sentencepiece ships a fix upstream, this hook becomes dead code — removable with a one-line revert. Flagged for periodic re-check.
+
+---
+
+## 0015 · 2026-04-16 · Chatterbox pace via ffmpeg post-processing
+
+**Context.** Chatterbox has `exaggeration`, `cfg_weight`, `temperature`, but no native speed/pace parameter. The Emotion dataclass's `pace` field has no direct target.
+
+**Options considered.**
+- **Skip pace on Chatterbox** — Emotion.pace silently ignored. Cross-engine behavior diverges: a line with `pace: -0.3` would slow under Kokoro and render at default under Chatterbox.
+- **Tempo-stretch the generated WAV via ffmpeg `atempo`** — industry-standard time stretching without pitch change. One ffmpeg invocation per line.
+- **Re-generate at altered Chatterbox parameters** — `temperature` and `cfg_weight` affect prosody but unpredictably; not a real pace knob.
+
+**Decision.** ffmpeg `atempo` post-processing. Same 0.40 coefficient family as the Kokoro backend (see kokoro_backend.py) so `Emotion.pace` is meaningful and roughly-comparable across engines. Pace ratios near 1.0 skip the ffmpeg step to save a process spawn.
+
+**Consequences.**
+- Small quality cost for extreme pace values (atempo introduces mild artifacts > 15% stretch), but our pace range is ±30% so it's within atempo's clean zone.
+- One extra ffmpeg call per non-default-pace Chatterbox line — negligible overhead vs Chatterbox's diffusion sampling cost.
+- Keeps engine-specific machinery inside `chatterbox_backend.py` — pipeline stays engine-agnostic.

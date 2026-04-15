@@ -2,7 +2,7 @@
   "backend": "mlx-kokoro",
   "mapping": {
     "narrator": "am_michael",
-    "Gatsby": "am_onyx",
-    "Daisy": "af_heart"
+    "Gatsby":   { "voice": "gatsby_ref", "backend": "chatterbox" },
+    "Daisy":    { "voice": "daisy_ref",  "backend": "chatterbox" }
   }
 }

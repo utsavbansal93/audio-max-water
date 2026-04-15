@@ -137,13 +137,27 @@ def _make_silence(ms: int, sr: int, path: Path) -> None:
     ], check=True)
 
 
+def _get_backend_cached(backends: dict[str, TTSBackend], name: str) -> TTSBackend:
+    """Load-once backend resolution. A chapter can mix engines per speaker;
+    each engine instantiates at most once regardless of how many lines it
+    renders (the MLX-Kokoro lesson #0009 applied at the dispatch layer)."""
+    if name not in backends:
+        from tts import get_backend
+        backends[name] = get_backend(name)
+    return backends[name]
+
+
 def render_chapter(
-    backend: TTSBackend,
+    backends: dict[str, TTSBackend],
     cast: CastModel,
     chapter: ChapterModel,
     build_dir: Path,
 ) -> Path:
-    """Render one chapter. Returns the path to the stitched chapter MP3."""
+    """Render one chapter. Returns the path to the stitched chapter MP3.
+
+    `backends` is a mutable cache keyed by backend name; engines are loaded
+    on first use so Chatterbox isn't paid for when a chapter is all-Kokoro.
+    """
     ch_dir = build_dir / f"ch{chapter.number:02d}"
     lines_dir = ch_dir / "lines"
     lines_dir.mkdir(parents=True, exist_ok=True)
@@ -155,8 +169,13 @@ def render_chapter(
     prev_was_inline_tag = False
     lines_list = chapter.lines
     for idx, line in enumerate(lines_list, start=1):
-        voice_id = cast.mapping[line.speaker]
-        h = _line_hash(line, voice_id)
+        entry = cast.resolve(line.speaker)
+        backend = _get_backend_cached(backends, entry.backend)
+        voice_id = entry.voice
+
+        # Include backend in the hash so switching engines invalidates cache
+        # (same voice name can mean different things across engines).
+        h = _line_hash(line, f"{entry.backend}:{voice_id}")
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in line.speaker)
         wav_path = lines_dir / f"{idx:04d}_{safe_name}_{h}.wav"
 
@@ -208,23 +227,42 @@ def render_all(
     cast = CastModel.model_validate(json.loads(cast_path.read_text()))
     build_dir = build_dir or (REPO / "build")
 
-    # Backend resolution order: explicit arg > config.yaml > cast.json.
-    # cast.backend is informational (which engine originally produced the
-    # voice-ID choices), not a hard binding — Kokoro and MLX-Kokoro share
-    # the same voice IDs so swapping is free.
-    backend_name = backend_name or CFG.get("backend") or cast.backend
-    backend = get_backend(backend_name)
+    # Backend resolution order for BARE-STRING cast entries (legacy):
+    # explicit arg > config.yaml > cast.json. Entries of form
+    # {"voice":..., "backend":...} carry their own backend and ignore this.
+    default_backend = backend_name or CFG.get("backend") or cast.backend
 
-    errs = check_voice_consistency(script, cast, {v.id for v in backend.list_voices()})
-    if errs:
-        for e in errs:
+    # Patch the cast's default backend so resolve() uses our override for
+    # bare-string entries without mutating cast.json on disk.
+    cast = cast.model_copy(update={"backend": default_backend})
+
+    # Validate: every speaker in the script must have a cast entry, and every
+    # voice id must exist in the backend that will render it. We check
+    # voice-id validity per-backend by loading each backend on-demand just
+    # for list_voices() — same cache the renderer uses.
+    backends: dict[str, TTSBackend] = {}
+    speakers = {line.speaker for ch in script.chapters for line in ch.lines}
+    voice_errs: list[str] = []
+    for sp in speakers:
+        if sp not in cast.mapping:
+            voice_errs.append(f"Speaker {sp!r} missing from cast.json")
+            continue
+        entry = cast.resolve(sp)
+        b = _get_backend_cached(backends, entry.backend)
+        if entry.voice not in {v.id for v in b.list_voices()}:
+            voice_errs.append(
+                f"Cast {sp!r} -> {entry.voice!r} is not a valid voice id "
+                f"for backend {entry.backend!r}"
+            )
+    if voice_errs:
+        for e in voice_errs:
             print("ERROR:", e)
         raise SystemExit(1)
 
     outputs: list[Path] = []
     for ch in script.chapters:
         print(f"rendering chapter {ch.number}: {ch.title}")
-        out = render_chapter(backend, cast, ch, build_dir)
+        out = render_chapter(backends, cast, ch, build_dir)
         print("  ->", out)
         outputs.append(out)
     return outputs

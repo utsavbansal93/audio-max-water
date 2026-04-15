@@ -4,6 +4,15 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Added (hybrid-chatterbox branch)
+- `tts/chatterbox_backend.py` — Chatterbox TTS backend (Resemble AI, autoregressive Llama-0.5B backbone). Maps `Emotion.intensity` → `exaggeration` (0.30–0.95 range), uses reference clips from `voice_samples/<voice_id>.wav`, post-processes pace via ffmpeg `atempo`. Model loaded once in `__init__` per the MLX pattern. Includes `install_clean_exit_hook()` — a workaround for a SIGBUS crash in `_sentencepiece.cpython-312-darwin.so` during Python shutdown; registers an atexit `os._exit(0)` to bypass the bad destructor path. Without it, macOS shows a "Python quit unexpectedly" dialog after every successful render.
+- `voice_samples/gatsby_ref.wav` + `voice_samples/daisy_ref.wav` — reference clips extracted from LibriVox Version 5 (Dramatic Reading) of *The Great Gatsby* Chapter 5: Tomas Peter as Gatsby at 1083.8–1091.7s (house description, 7.9s single-voice), Jasmin Salma as Daisy at 1343.5–1352.8s (shirts-scene tears, 9.3s single-voice). Timestamps located via `faster-whisper` word-level alignment against known script lines.
+- `voice_samples/SOURCES.md` — PD attribution, file provenance, extraction commands, and the alignment methodology for reproducibility.
+- `CastEntry` model in `pipeline/schema.py` — `{voice, backend}` per-character assignment. `CastModel.mapping` is now `dict[str, str | CastEntry]` with a `.resolve(character)` helper that applies the bare-string → default-backend shim.
+- Per-speaker backend resolution in `pipeline/render.py`: `_get_backend_cached` lazy-loads each backend once; `render_chapter` dispatches per line based on `cast.resolve(speaker).backend`. A chapter with mixed engines pays each engine's load cost exactly once.
+- Hybrid cast for Gatsby: `cast_gatsby.json` updated — narrator stays on Kokoro (`am_michael`), Gatsby uses `gatsby_ref` on Chatterbox, Daisy uses `daisy_ref` on Chatterbox.
+- `.gitignore`: removed `cast.json` and `script.json` ignore rules — they're authored configuration and belong in history.
+
 ### Changed
 - `README.md` rewritten as user-facing — audience is someone landing on the repo cold who wants to turn a story into an audiobook. New sections: one-paragraph what-is-this, Quickstart, Source formats, How it works, Casting, Swapping engines, **Modifying for your system** (Linux / NVIDIA CUDA / CPU-only / Windows — covers which parts are Mac-specific vs cross-platform), Troubleshooting, Project docs, License. AI-assistant instructions moved out — they live in `CLAUDE.md`; README now links.
 - Portability refactor: `pipeline/render.py`, `pipeline/package.py`, `pipeline/qa.py`, `pipeline/bench.py` replace hard-coded `/opt/homebrew/bin/ffmpeg` / `/opt/homebrew/bin/ffprobe` with `shutil.which(...)` so the code runs on any platform where the binaries are on `$PATH`. Falls back to the Homebrew paths only if `shutil.which` returns `None`.

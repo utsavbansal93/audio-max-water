@@ -1,0 +1,8 @@
+{
+  "backend": "kokoro",
+  "mapping": {
+    "narrator": "bf_isabella",
+    "Darcy": "bm_lewis",
+    "Elizabeth": "bf_emma"
+  }
+}
