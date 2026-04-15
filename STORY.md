@@ -119,3 +119,25 @@ Three questions, each pointing at a real hole in how I was working.
 - *"Widen the loop" bias check* — after solving a local problem, ask: what system around this loop would prevent the next surprise? Before-this-iteration the loop was "render → listen → tweak"; after it's "research → render → auto-QA → listen → tweak → record." The wider loop is where regressions get caught automatically.
 - *The Whisper-round-trip pattern* — use a second model to verify the first. Applies far beyond TTS: any "generate X from spec" pipeline benefits from "re-extract the spec from X and diff."
 - *The "right layer" discipline for data contracts* — pronunciation-normalization inside the backend, pause-detection inside the renderer, emotion in the script — each concern at the layer where it naturally lives. When you feel tempted to mutate the script to fix a rendering bug, that's a smell that the fix belongs elsewhere.
+
+---
+
+## 2026-04-16 · Day 1 (iteration 4) — second scene, verification of the pipeline as a whole
+
+**What you asked for.** Another P&G scene — the Hunsford first proposal — as a sanity test of the end-to-end pipeline on a scene that (a) has Elizabeth as a speaking character for the first time and (b) is the *emotional inverse* of the Reconciliation scene. Also: walk through every step of the pipeline as I process the scene.
+
+**What I did in order.** Parsed the scene into `build_hunsford/script.json` with a rich `book_context` grounding the emotions in the broader arc (Elizabeth knows Darcy killed Jane's happiness, still believes Wickham's version, is privately furious; Darcy has been fighting himself for weeks; both emotional positions are peak-overconfidence about the other). Split Darcy's opening speech into four short fragments so the dam-bursting "In vain have I struggled" hits hard and the peak "how ardently I admire and love you" lands slowest. Split Elizabeth's reply into three fragments; the last fragment ("I had not known you a month before I felt that you were the last man in the world whom I could ever be prevailed on to marry.") got `intensity: 0.95, pace: -0.25` — the kill shot. No cast changes: `cast.json` was reused, proving the cross-scene voice-consistency design works.
+
+**Results.**
+- Render 16.6 s wall-clock, audio 72.2 s → **RTF 0.23** (still ~4× faster than realtime on M3).
+- QA: 11/13 lines passed cleanly. Two flagged at threshold boundaries: (a) a long narrator sentence peaked exactly at −1.0 dB, my conservative clipping threshold; (b) a 3-word line ("Elizabeth eventually replies:") fell below 1.3 words/sec. Neither is a rendering defect — they're thresholds-too-tight for natural variance.
+- Whisper round-trip similarity **0.986** — the highest yet. The scene reads back faithfully.
+
+**What this teaches.**
+- *Cross-scene voice consistency is free if `cast.json` is authoritative* — we reused Isabella/Lewis/Emma without re-proposing. The same Darcy who whispered "I thought only of you" now commands "You must allow me to tell you how ardently I admire and love you" — same voice, opposite register. That's the contract paying off.
+- *QA thresholds need calibration against real output distributions, not textbook audiobook standards.* A 3-word sentence can't plausibly hit 1.3 w/s with natural TTS pacing — the threshold should exempt short utterances. Same with peak dB: −1.0 is not actually clipping; −0.3 dB would be a more honest line. Filed as a follow-up tuning.
+- *Emotion labels and intensity are doing real work* — I can hear (via the stats, which approximate what the ear will confirm) that Darcy's peak line is 27% slower than his opening fragment, and Elizabeth's kill-shot is 33% slower than her opening. The rising/falling arc across fragments is what separates "voice reading text" from "actor acting."
+
+**Concept bucket (added).**
+- *QA-threshold calibration against distribution, not spec* — audiobook "standards" assume whole chapters; our lines are fragments. Thresholds have to match the unit being measured.
+- *The cross-scene consistency dividend* — the cost of treating `cast.json` as authoritative was a small schema decision on Day 1. The dividend is every future scene reusing it for free, forever. This is how data contracts compound.
