@@ -112,17 +112,10 @@ def _pause_for(
         gap = int(base * 0.9)
 
     # Emotional approach: held breath before a weighty line.
-    # Doubled multiplier for peaks (≥0.85) so intensity contrast shows up as
-    # perceptible silence — crucial when the voice itself has limited pitch
-    # range (Kokoro's American presets, per Gatsby listening test).
-    if cur_int >= 0.85:
-        gap += int(base * 2.6 * (cur_int - 0.5))
-    elif cur_int >= 0.75:
+    if cur_int >= 0.75:
         gap += int(base * 1.4 * (cur_int - 0.5))
     # Emotional aftermath: let a weighty previous line ring out.
-    if prev_int >= 0.85:
-        gap += int(base * 2.0 * (prev_int - 0.5))
-    elif prev_int >= 0.75:
+    if prev_int >= 0.75:
         gap += int(base * 1.0 * (prev_int - 0.5))
 
     # Pace < 0 means slow delivery — match it with a slightly longer approach.

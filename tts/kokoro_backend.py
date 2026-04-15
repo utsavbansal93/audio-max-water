@@ -103,34 +103,20 @@ class KokoroBackend(TTSBackend):
         text = _pronounce(text)
 
         # Map Emotion.pace → speed multiplier (Kokoro's only "emotion" lever).
-        # pace is in [-1, +1]. Widened coefficient 0.28 → 0.40 after the
-        # Gatsby scene showed Kokoro's American voices with less natural pitch
-        # range than British — structural prosody (pace + pauses) has to do
-        # more work. pace: -0.3 is now ~0.88× speed (was 0.92×).
+        # pace is in [-1, +1]; widened coefficient so pace: -0.3 = ~0.92x speed,
+        # pace: +0.3 = ~1.08x — gives noticeable slowing on tender/vulnerable beats.
         effective_speed = speed * self._default_speed
         if emotion is not None:
-            effective_speed *= 1.0 + 0.40 * emotion.pace
-            # High-intensity lines decelerate harder; peak lines (0.85+)
-            # double the coefficient so they actually *land* instead of
-            # reading past themselves.
-            if emotion.intensity >= 0.85:
-                effective_speed *= 1.0 - 0.09 * (emotion.intensity - 0.5)
-            elif emotion.intensity >= 0.75:
-                effective_speed *= 1.0 - 0.05 * (emotion.intensity - 0.5)
-
-        # Drama punctuation: for intensity ≥ 0.90 lines that end in a period,
-        # append an ellipsis to what Kokoro sees. Kokoro tapers the final word
-        # into the ellipsis instead of clipping it, giving peak lines a
-        # naturally-held final syllable. Script text stays byte-faithful —
-        # this only affects what the synthesizer receives.
-        text_for_synth = text
-        if emotion is not None and emotion.intensity >= 0.90 and text.rstrip().endswith((".", "!", "?")):
-            text_for_synth = text.rstrip() + "…"
+            effective_speed *= 1.0 + 0.28 * emotion.pace
+            # High-intensity lines get a tiny additional deceleration so the
+            # actor "leans in" on the weighty lines.
+            if emotion.intensity >= 0.75:
+                effective_speed *= 1.0 - 0.04 * (emotion.intensity - 0.5)
 
         # Kokoro returns a generator of (graphemes, phonemes, audio) tuples,
         # one per sentence-ish chunk. Concatenate them into one clip.
         chunks: list[np.ndarray] = []
-        for _gs, _ps, audio in self._pipeline(text_for_synth, voice=voice_id, speed=effective_speed):
+        for _gs, _ps, audio in self._pipeline(text, voice=voice_id, speed=effective_speed):
             if hasattr(audio, "cpu"):
                 audio = audio.cpu().numpy()
             chunks.append(np.asarray(audio, dtype=np.float32))

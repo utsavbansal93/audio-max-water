@@ -17,10 +17,6 @@ All notable changes to this project will be documented here. Format based on [Ke
 - Inline dialogue-tag detection in `pipeline/render.py::_is_inline_tag` — short narrator lines sandwiched between same-speaker dialogue ("he replied," between two Darcy lines) now hug the surrounding dialogue tightly (0.4× base gap) instead of getting the full speaker-change pause.
 
 ### Changed
-- **Drama amp for Kokoro** (both backends + renderer, after user reported Gatsby/Daisy "flat AI"):
-  - `tts/kokoro_backend.py` and `tts/mlx_kokoro_backend.py`: pace coefficient `0.28 → 0.40`; intensity ≥ 0.85 gets a doubled deceleration (coefficient `0.04 → 0.09`) vs. intensity 0.75–0.84 (coefficient `0.04 → 0.05`); intensity ≥ 0.90 lines appended with a trailing ellipsis at synth time (script stays byte-faithful) so Kokoro tapers the last word instead of clipping it.
-  - `pipeline/render.py::_pause_for`: held-breath approach and ring-out gains doubled for peaks (intensity ≥ 0.85) — needed because Kokoro's American voices have less natural pitch range than the British presets, so structural prosody (silence) has to carry more weight.
-  - `build_gatsby/script.json`: Gatsby/Daisy peak intensities widened to 0.95–1.0 ("Five years next November" 0.7→0.85, "It's stopped." 0.85→1.0, "Absolutely." 0.9→1.0, "Celebrated people." 0.8→0.95, Daisy's "You're sure you want us to come?" 0.75→0.9); Daisy's "We haven't met for many years." pushed *down* to 0.35 per stage direction ("matter-of-fact as it could ever be") — the contrast is the point.
 - `pipeline/render.py::_pause_for` now takes `nxt` and `prev_is_inline_tag` context; narrator-to-narrator continuations bumped to 1.2× base (was 0.8×) so prose sentences get breathing room; same-speaker dialogue fragments relaxed to 0.9× base.
 - Validator `_normalize` now preserves heading text (strips only the `#` prefix) and drops quotation marks (Unicode curly + straight), so dialogue attribution that splits lines doesn't fail the faithful-wording check.
 - `.gitignore` uses `**` double-glob for `build/`, `out/`, `samples/`, `voice_samples/` — previous single-level globs missed nested sample WAVs.
