@@ -26,8 +26,10 @@ import soundfile as sf
 from pipeline.schema import ScriptModel
 
 
+import shutil
+
 REPO = Path(__file__).resolve().parents[1]
-FFPROBE = "/opt/homebrew/bin/ffprobe"
+FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 
 # --- thresholds (deliberately loose — we want regressions, not perfectionism) -

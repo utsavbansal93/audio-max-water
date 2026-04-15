@@ -1,0 +1,112 @@
+{
+  "title": "The Disastrous First Proposal (Hunsford)",
+  "book_context": "Chapter 34 of Jane Austen's 'Pride and Prejudice'. Elizabeth is at Hunsford Parsonage visiting Charlotte. She has just learned from Colonel Fitzwilliam that Darcy was the reason Bingley abandoned Jane — she is, in this moment, privately furious with him. She thinks him proud, cruel, and the ruin of her sister's happiness. She also still believes Wickham's slanders against him. Darcy has spent weeks convinced his feelings for her are a weakness he should conquer; here he finally surrenders — but his proposal reveals he has been dwelling on the social inferiority of her family, the degradation he is risking by loving her. He is passionate AND insulting in the same breath — genuinely moved, but unable to hide his pride. Elizabeth's reply is cold, deliberate, the floodgates of months of held-back contempt opening — not hot rage, but the kind of slow, lethal indictment that lands every word. It is the emotional inverse of the Final Reconciliation scene.",
+  "characters": [
+    {
+      "name": "narrator",
+      "age_hint": "adult",
+      "gender": "female",
+      "accent": "en-GB",
+      "personality": "Austen-dry, literary, ironic yet warm, measured pace",
+      "sample_lines": [
+        "Elizabeth stood astonished, she coloured, doubted, and was silent.",
+        "He spoke well, but there were feelings, besides those of the heart, to be detailed."
+      ]
+    },
+    {
+      "name": "Darcy",
+      "age_hint": "late 20s",
+      "gender": "male",
+      "accent": "en-GB",
+      "personality": "proud but vulnerable, formal, restrained fervor, self-possessed but exposed in love",
+      "sample_lines": [
+        "In vain have I struggled. It will not do.",
+        "You must allow me to tell you how ardently I admire and love you."
+      ]
+    },
+    {
+      "name": "Elizabeth",
+      "age_hint": "early 20s",
+      "gender": "female",
+      "accent": "en-GB",
+      "personality": "sharp, witty, self-aware, quick intelligence — here icy, deliberate, lethal",
+      "sample_lines": [
+        "I had not known you a month before I felt that you were the last man in the world whom I could ever be prevailed on to marry.",
+        "From the very beginning, from the first moment I may almost say, of my acquaintance with you,"
+      ]
+    }
+  ],
+  "chapters": [
+    {
+      "number": 1,
+      "title": "The Disastrous First Proposal (Hunsford)",
+      "lines": [
+        {
+          "speaker": "narrator",
+          "text": "The Disastrous First Proposal (Hunsford)",
+          "emotion": {"label": "formal", "intensity": 0.4, "pace": -0.15, "notes": "Chapter heading; slight gravitas foreshadowing what's to come."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "After months of tension, Darcy proposes in a manner that manages to be both passionate and deeply insulting.",
+          "emotion": {"label": "dry", "intensity": 0.4, "pace": 0.0, "notes": "Scene setter with a wry edge — Austen loves this kind of double-edged framing."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "In vain have I struggled.",
+          "emotion": {"label": "urgent", "intensity": 0.85, "pace": 0.05, "notes": "He has been fighting himself for weeks. This is the dam breaking. Slight forward lean in pace — he is agitated, not composed."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "It will not do.",
+          "emotion": {"label": "firm", "intensity": 0.8, "pace": -0.05, "notes": "Clipped, frustrated. He has conceded defeat to his own feelings."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "My feelings will not be repressed.",
+          "emotion": {"label": "urgent", "intensity": 0.9, "pace": 0.0, "notes": "The declaration. Each word has to be unmistakable."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "You must allow me to tell you how ardently I admire and love you.",
+          "emotion": {"label": "vulnerable", "intensity": 0.95, "pace": -0.15, "notes": "The peak. Note the tell: 'You must allow me' is imperious — even at his most exposed, he commands. But 'ardently I admire and love you' must land with genuine fervor, slowest on 'ardently' and 'love you'. This is the line where she could, in another world, say yes."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Elizabeth stood astonished, she coloured, doubted, and was silent.",
+          "emotion": {"label": "calm", "intensity": 0.5, "pace": -0.1, "notes": "The rhythm of the four verbs matters — each a distinct beat of her reaction. Austen-dry observation."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "This he considered sufficient encouragement, and immediately followed it by avowing hope and fear, complaint and resentment.",
+          "emotion": {"label": "wry", "intensity": 0.55, "pace": 0.0, "notes": "The irony is thick — 'this he considered sufficient encouragement' is Austen laughing at Darcy's self-regard. Deliver with controlled wryness."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He spoke well, but there were feelings, besides those of the heart, to be detailed, and he was not more eloquent on the subject of tenderness than of pride.",
+          "emotion": {"label": "dry", "intensity": 0.55, "pace": -0.05, "notes": "The indictment. This is Austen's scalpel — 'not more eloquent on the subject of tenderness than of pride' is the line that tells us Darcy is already sabotaging himself. Measured, the emphasis lives in the balance."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Elizabeth eventually replies:",
+          "emotion": {"label": "formal", "intensity": 0.35, "pace": -0.05, "notes": "Brief narrative handoff; holds a small breath before she speaks."}
+        },
+        {
+          "speaker": "Elizabeth",
+          "text": "From the very beginning, from the first moment I may almost say, of my acquaintance with you,",
+          "emotion": {"label": "commanding", "intensity": 0.8, "pace": -0.2, "notes": "Cold opening. Each phrase deliberately set down. Not hot — lethal. The repetition 'from the very beginning, from the first moment' is a scaffold she's building to mount her indictment."}
+        },
+        {
+          "speaker": "Elizabeth",
+          "text": "your manners impressing me with the fullest belief of your arrogance, your conceit, and your selfish disdain of the feelings of others...",
+          "emotion": {"label": "angry", "intensity": 0.85, "pace": -0.15, "notes": "The triad — arrogance / conceit / disdain — must each land. Building force, but still held. The ellipsis is a pause where she gathers for the killing blow. Do NOT rush."}
+        },
+        {
+          "speaker": "Elizabeth",
+          "text": "I had not known you a month before I felt that you were the last man in the world whom I could ever be prevailed on to marry.",
+          "emotion": {"label": "resolute", "intensity": 0.95, "pace": -0.25, "notes": "The kill shot. Every word weighted. Slowest on 'the last man in the world' and 'ever be prevailed on to marry'. This is the line that scars him for months and drives the letter and the whole arc of Volume III. Final as a closing door."}
+        }
+      ]
+    }
+  ]
+}

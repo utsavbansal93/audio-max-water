@@ -20,9 +20,11 @@ from pipeline.render import render_all
 from pipeline.schema import ScriptModel
 
 
+import shutil
+
 REPO = Path(__file__).resolve().parents[1]
 BENCH = REPO / "BENCHMARKS.md"
-FFPROBE = "/opt/homebrew/bin/ffprobe"
+FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 
 def _git_sha_short() -> str:

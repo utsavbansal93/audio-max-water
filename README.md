@@ -1,124 +1,165 @@
-# Audio Max Water — Story → Full-Cast Audiobook
+# Audio Max Water
 
-Turn Claude-written stories into narrated `.m4b` audiobooks with a distinct voice per character. Free tooling, runs locally on Apple Silicon.
+**Convert a written story into a narrated full-cast audiobook.** Drop a story (prose or script format) into `stories/`, run one command, get an `.m4b` with a distinct voice per character — narrator, Gatsby, Daisy, whoever. Runs locally using open-source neural TTS. No API keys, no cloud, no per-minute billing. Built and tuned primarily on Apple Silicon; see *Modifying for your system* below for Linux / NVIDIA / CPU-only setups.
 
-## What it does
+---
 
-1. **Parses** a story (markdown / plain text) with Claude Opus into a structured script: narrator + characters, each line tagged with emotion grounded in book-level context.
-2. **Casts** a voice per character from the active TTS backend's library; you approve samples before commit.
-3. **Renders** each line with the cast voice + emotion, preserves per-line audio for surgical re-renders.
-4. **Packages** the chapter(s) as `.m4b` with chapter markers, ready for Apple Books.
+## Quickstart (Apple Silicon Mac)
 
-Wording is kept byte-verbatim from the source. Voice-per-character is locked in `cast.json` and reused across chapters.
+```bash
+git clone https://github.com/utsavbansal93/audio-max-water
+cd audio-max-water
+brew install python@3.12 ffmpeg espeak-ng
+python3.12 -m venv .venv
+.venv/bin/pip install -e .
 
-## Source format
+# 1. Put your story at stories/my_story.md
+# 2. Parse it into a script (see "Source formats" below for the expected shape)
+# 3. Render + QA + package + append a benchmark row:
+.venv/bin/python -m pipeline.bench \
+    --script build/script.json \
+    --cast   cast.json \
+    --build  build \
+    --target "my_story ch01" \
+    --notes  "first render"
 
-Two formats are supported for `stories/*.md`:
+# Output: out/<Title>.m4b
+```
 
-**Prose** (for translating published work):
+The first run downloads the Kokoro-82M weights (~300 MB) via Hugging Face.
+
+---
+
+## Source formats
+
+Two ways to write a story. Both pass the same faithful-wording contract (see `DECISIONS.md`).
+
+**Prose** — for translating existing published work:
+
 ```
 "If you will thank me," he replied, "let it be for yourself alone…"
 ```
-Dialogue attribution (`, he said`) is parsed by Claude Opus from context. Emotion is inferred from the text and a `book_context` block.
 
-**Script** (recommended for original writing):
+Claude Opus parses dialogue from context, assigns speakers, and infers emotion from a `book_context` block you supply.
+
+**Script** — recommended for original writing:
+
 ```
 Gatsby: (In a hollow, automatic voice) Five years next November.
 Daisy:  (Her voice as matter-of-fact as it could ever be) We haven't met for many years.
 ```
-Speaker labels (`Gatsby:`, `Daisy:`) and parenthetical stage directions (`(In a hollow…)`) are stripped by the validator before the faithful-wording diff. The parentheticals become `emotion.notes` in `script.json` — so the user directs the actor explicitly rather than asking the LLM to guess.
 
-Both formats pass the same faithful-wording contract.
+Speaker labels (`Gatsby:`, `Daisy:`) are stripped by the validator. Parenthetical stage directions flow straight into `emotion.notes` in `script.json` — you direct the actor, no guesswork.
 
-## Requirements
+---
 
-- macOS on Apple Silicon (tested on M3 16 GB)
-- Python 3.12 (`brew install python@3.12`)
-- `ffmpeg` (`brew install ffmpeg`)
-- Claude Code CLI (for the Opus parsing + casting steps)
+## How it works
 
-## Install
+Five stages, all in `pipeline/`:
 
-```bash
-python3.12 -m venv .venv
-.venv/bin/pip install -e .
-```
+1. **Parse** — Claude Opus converts the story into `script.json` (speaker, text, emotion per line). Validates byte-verbatim fidelity to the source.
+2. **Cast** — maps each character to a voice. `cast.json` is authoritative and reused across chapters so voices stay consistent.
+3. **Render** — for each line, looks up the voice, calls the TTS backend, caches the WAV keyed by content hash (so re-rendering unchanged lines is free).
+4. **Stitch** — concatenates per-line WAVs with emotion-aware silence gaps into one chapter MP3.
+5. **Package** — produces an `.m4b` with chapter markers, ready for Apple Books / `.m4b`-aware players.
 
-Install extra engines only when you want to swap to them:
+See `DECISIONS.md` for the architectural reasoning behind each stage.
 
-```bash
-.venv/bin/pip install chatterbox-tts     # emotion-first
-.venv/bin/pip install TTS                # Coqui XTTS v2 (voice cloning)
-```
+---
 
-## Run (CLI, Phase 1)
+## Casting voices
 
 ```bash
-# 1. Drop your story in stories/ and run the pipeline
-.venv/bin/python -m pipeline.script stories/my_story.md      # → build/script.json
-.venv/bin/python -m pipeline.cast  --propose                 # → cast.json + samples/
-#    approve with: python -m pipeline.cast --approve
-#    or swap:      python -m pipeline.cast --swap Elena 2
-.venv/bin/python -m pipeline.render build/script.json        # → build/ch*/lines/*.wav
-.venv/bin/python -m pipeline.package                         # → out/<title>.m4b
+.venv/bin/python -m pipeline.cast --propose              # top-3 voices per character + audition samples
+.venv/bin/python -m pipeline.cast --swap Darcy 2         # promote rank-2 proposal for Darcy
+.venv/bin/python -m pipeline.cast --approve              # freeze cast.json
 ```
 
-Or the one-shot convenience:
+Audition samples end up in `samples/cast/<character>/*.wav`. `cast.json` is the source of truth for `character → voice_id` — don't regenerate it implicitly.
 
-```bash
-make audiobook STORY=stories/my_story.md
-```
+For multi-book projects, use per-book cast files (`cast_gatsby.json`, `cast_pp.json`, etc.) and pass them via `--cast`. Voice drift across books is expected and correct.
 
-## Quality-check & benchmarks
+---
 
-```bash
-.venv/bin/python -m pipeline.qa --whisper                              # mech QA + Whisper round-trip
-.venv/bin/python -m pipeline.bench --target "<label>" --notes "<what changed>"
-```
-
-`pipeline.qa` flags duration/peak/RMS/pacing anomalies and (with `--whisper`) transcribes the chapter MP3 via `faster-whisper` and diffs against the script — catches mispronunciations and dropped words.
-
-`pipeline.bench` renders + runs QA + appends a row to `BENCHMARKS.md` (commit SHA, wall-clock, audio duration, RTF, QA pass rate, Whisper similarity, notes). Run this on every tune-or-experiment so the perf time series stays intact — see `CLAUDE.md`.
-
-## Run (web UI, Phase 2)
-
-Not yet. Layered on after the CLI is solid.
-
-```bash
-.venv/bin/uvicorn ui.app:app --reload    # localhost:8000
-```
-
-## Swapping TTS backends
+## Swapping TTS engines
 
 Edit `config.yaml`:
 
 ```yaml
-backend: mlx-kokoro    # default. Others: kokoro (torch), chatterbox, xtts
+backend: mlx-kokoro    # default on Apple Silicon
 ```
 
-`mlx-kokoro` and `kokoro` share the Kokoro-82M weights and voice IDs, so swapping between them reuses `cast.json` with no changes. Current benchmarks on M3 (16 GB): MLX-Kokoro RTF ~0.15, torch Kokoro RTF ~0.21.
+Supported backends:
 
-No pipeline code changes. Backends that need reference audio (Chatterbox, XTTS) read clips from `voice_samples/<character>.wav`.
-
-## Engine comparison (default: Kokoro)
-
-| Engine | Voices | Emotion | Notes |
+| Backend | Expressiveness | Speed (M3) | Setup |
 |---|---|---|---|
-| **Kokoro** (default) | 50+ presets | Implicit (punctuation) | Deterministic, fast, zero-touch casting |
-| Chatterbox | Voice cloning | Explicit slider | Best emotional range, needs reference clips |
-| XTTS v2 | Voice cloning | Reference-matched | Coqui unmaintained; works but aging |
+| **mlx-kokoro** | Limited (no emotion input) | RTF ~0.15 | None beyond `pip install -e .` |
+| **kokoro** (torch) | Same as mlx-kokoro | RTF ~0.21 | Works on any platform (CPU/CUDA/MPS) |
+| **chatterbox** | Explicit emotion slider, voice cloning | Slower, larger model | `pip install chatterbox-tts` + reference clip per voice |
 
-See `DECISIONS.md` for the full trade-off analysis and `samples/COMPARISON.md` for the P&P test.
+Both Kokoro backends share voice IDs and `cast.json` files. Chatterbox uses reference clips from `voice_samples/`.
 
-## Project docs
+---
 
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed, when
-- [`DECISIONS.md`](DECISIONS.md) — non-obvious choices and their rationale
-- [`STORY.md`](STORY.md) — narrative of how this got built; retrospective material
-- [`CLAUDE.md`](CLAUDE.md) — rules for Claude Code sessions in this repo
+## Modifying for your system
+
+This project was built and tuned on an M3 MacBook Air. These are the parts that may need changing on other hardware.
+
+### Linux or other Unix
+
+- Replace `brew install …` with your distro's package manager (`apt install python3.12 ffmpeg espeak-ng`, `pacman -S …`, etc.).
+- The code already uses `shutil.which("ffmpeg")` / `shutil.which("ffprobe")`, so as long as they're on `$PATH`, nothing else changes.
+- Python 3.12 via `pyenv` or your distro.
+- You cannot use the `mlx-kokoro` backend (Apple-Silicon-only via MLX). Set `backend: kokoro` in `config.yaml` — same Kokoro weights, torch runtime, portable everywhere.
+
+### NVIDIA / CUDA
+
+- Use `backend: kokoro` (not `mlx-kokoro`).
+- Kokoro backend default device is determined by torch; it will pick CUDA if available. If you want to force it, patch `tts/kokoro_backend.py` to pass `device="cuda"` to `KPipeline`.
+- Chatterbox: pass `device="cuda"` in its `from_pretrained()` call.
+- Expect RTF on the order of the M3 numbers or better.
+
+### CPU-only / low-RAM
+
+- `backend: kokoro` works on CPU with the 82M-param model — slow but functional.
+- Avoid Chatterbox on CPU (0.5B+ params, ~10× slower than on GPU).
+- Drop `faster-whisper` to `tiny.en` or skip `--whisper` entirely in the QA pass to save memory.
+
+### Windows
+
+- Most Python deps work fine. `espeak-ng` is trickier — install from the [espeak-ng releases](https://github.com/espeak-ng/espeak-ng/releases) and ensure `espeak-ng.exe` is on `%PATH%`.
+- `afplay` (Mac-only) appears in a few docs for playback — use the OS's default player instead.
+
+### What's Mac-specific vs cross-platform
+
+| Mac-specific | Cross-platform |
+|---|---|
+| `mlx-kokoro` backend (MLX is Apple-Silicon-only) | Everything in `pipeline/` |
+| `/opt/homebrew/` paths in older commits (now `shutil.which`) | `kokoro` (torch) and `chatterbox` backends |
+| Playback examples using `afplay` | `ffmpeg`, `faster-whisper`, `espeak-ng` |
+
+---
 
 ## Troubleshooting
 
-- **Kokoro model won't download**: set `HF_HOME` to a writable path.
-- **ffmpeg chapter markers missing in Apple Books**: re-import; Books caches aggressively.
-- **Voice drift across chapters**: confirm `cast.json` wasn't regenerated. It's the source of truth.
+- **Kokoro model won't download** — set `HF_HOME` to a writable path, or `HF_TOKEN` if you hit anonymous-rate-limit warnings (they usually don't block; just slow the first download).
+- **`espeak-ng not found`** — Kokoro falls back to it for out-of-vocabulary words. Install via your package manager.
+- **ffmpeg chapter markers missing in Apple Books** — re-import the `.m4b`; Books caches aggressively.
+- **Voices drift across chapters** — `cast.json` was regenerated. It's the source of truth; recover from git and render again.
+- **A line sounds wrong** — rerunning `pipeline.render` only re-synthesizes lines whose content hash changed, so edit `script.json` for that line and re-render; other lines reuse their cached WAVs.
+
+---
+
+## Project documents
+
+- `CLAUDE.md` — rules for AI assistants (Claude Code, etc.) working in this repo: logging discipline, faithful-wording contract, voice-consistency contract, backend-swappability contract. If you're using an AI assistant for changes here, point it at this file.
+- `DECISIONS.md` — numbered architectural decisions with context/options/consequences for each non-obvious choice.
+- `STORY.md` — narrative build log. The "why" behind the "what", written as it happened. Retrospective-ready.
+- `CHANGELOG.md` — dated entries, Keep-a-Changelog format.
+- `BENCHMARKS.md` — render-time / audio-duration / RTF / QA pass-rate / Whisper similarity across every iteration.
+
+---
+
+## License
+
+MIT. See `LICENSE` if present. Source reference clips (from LibriVox or similar) are used under their own public-domain / CC attribution; see `voice_samples/SOURCES.md` once added.

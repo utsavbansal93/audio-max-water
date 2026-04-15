@@ -2,13 +2,23 @@
 __pycache__/
 *.pyc
 .DS_Store
-build/**
+# In build* dirs: keep only script.json (the authored parse output).
+# Everything else (per-line wavs, silence clips, concat.txt, chapter mp3s,
+# ffmpeg metadata) is regenerable and gets ignored.
+build*/ch*/
+build*/**/*.wav
+build*/**/*.mp3
+build*/**/concat.txt
+build*/**/_concat.txt
+build*/**/_chapters.ffmeta
 !build/.gitkeep
+
 out/**
 !out/.gitkeep
 samples/**
 !samples/.gitkeep
 voice_samples/**
 !voice_samples/.gitkeep
+!voice_samples/SOURCES.md
 cast.json
 script.json

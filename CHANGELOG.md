@@ -4,6 +4,14 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Changed
+- `README.md` rewritten as user-facing — audience is someone landing on the repo cold who wants to turn a story into an audiobook. New sections: one-paragraph what-is-this, Quickstart, Source formats, How it works, Casting, Swapping engines, **Modifying for your system** (Linux / NVIDIA CUDA / CPU-only / Windows — covers which parts are Mac-specific vs cross-platform), Troubleshooting, Project docs, License. AI-assistant instructions moved out — they live in `CLAUDE.md`; README now links.
+- Portability refactor: `pipeline/render.py`, `pipeline/package.py`, `pipeline/qa.py`, `pipeline/bench.py` replace hard-coded `/opt/homebrew/bin/ffmpeg` / `/opt/homebrew/bin/ffprobe` with `shutil.which(...)` so the code runs on any platform where the binaries are on `$PATH`. Falls back to the Homebrew paths only if `shutil.which` returns `None`.
+- `.gitignore` rewritten to ignore regenerable build artifacts (per-line WAVs, silence clips, chapter MP3s, concat metadata) across every `build*/` directory while keeping `build*/script.json` tracked — the script is the authored parse output and belongs in history.
+
+### Reverted
+- Drama-amp iteration (commit `429179c`) reverted via `b852045` after user confirmed the changes did not bring emotion to Kokoro's American voices. The fundamental issue is Kokoro's non-autoregressive architecture — no emotional-state input — which structural prosody (pauses, pace, contrast) cannot compensate for. See `DECISIONS.md #0011` for the escalation decision.
+
 ### Added
 - `stories/gatsby_west_egg_reunion.md` + `build_gatsby/script.json` + `cast_gatsby.json` — Great Gatsby reunion scene (Chapter 5). First non-Austen source, first script-format source (`Narrator:` / `Gatsby:` / `(stage direction)` style), first American-English cast. Cast: narrator (Nick) → `am_michael`, Gatsby → `am_onyx`, Daisy → `af_heart`. Per-book cast file pattern established: `cast_<book>.json` for each distinct book's voice map; the default `cast.json` remains the P&P cast.
 - `pipeline/validate.py::_normalize` extended to handle script-format sources: strips speaker labels (`^Narrator:\s*`, `^Gatsby:\s*`, etc.) and parenthetical stage directions `(…)` before diffing. Existing prose-form scenes (Austen) still validate because neither feature is present there.

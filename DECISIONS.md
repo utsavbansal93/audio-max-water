@@ -168,3 +168,29 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 - Two source formats supported: prose and script. Both validate. The script format is clearly easier for user-authored content where they want to *direct* the actor — worth mentioning as a recommended format in README.
 - The parenthetical-stripping rule is aggressive — prose with genuine parenthetical content (e.g., "he said (for the third time) that…") would lose it in validation. Not a problem today but a watch-item. If we hit it, we switch to stripping only parentheticals that sit adjacent to speaker labels.
 - Per-book casts are independent; voice drift across books is expected and correct (Nick sounds different from Austen's narrator; he should).
+
+---
+
+## 0011 · 2026-04-16 · Kokoro's emotional ceiling; Option D (hybrid engine) selected
+
+**Context.** Three scenes rendered and listened-to: P&P Reconciliation (British voices, validated), P&P Hunsford (British voices, validated), Gatsby West Egg Reunion (American voices). User reported Gatsby's Gatsby + Daisy (`am_onyx`, `af_heart`) sounded "very AI and flat" — the narrator voice (`am_michael`) was fine. Iteration 7 ("drama amp") widened the pace coefficient, doubled intensity deceleration, added drama-punctuation trails, doubled held-breath silences on peaks, and pushed intensity values in the script to 0.95–1.0. User confirmed: the changes did not produce emotion. Reverted in commit `b852045`.
+
+**Root cause.** Kokoro is non-autoregressive (StyleTTS2-style). It accepts text + speed, nothing else. There is no "emotional state" input, no slider, no reference-audio prompt. Any emotional variation heard in Kokoro output is a side-effect of punctuation and speed — essentially reading quirks, not acted emotion. Kokoro's British presets happen to have more native pitch range than the American presets, which is why the Austen scenes landed. The American voices hit the ceiling first, but the ceiling is there for every Kokoro voice eventually. **Structural prosody (silence, pace, contrast) can imply emotional state but cannot make a voice sound emotional** — that's an autoregressive-TTS job.
+
+**Options reconsidered.**
+- Exhaust more Kokoro tuning — ruled out by iteration 7 outcome.
+- **Chatterbox** (Resemble AI, Llama-0.5B backbone, autoregressive) — explicit `exaggeration` slider per-line, voice cloning from 5–10 s reference clips, runs on MPS.
+- **Sesame CSM** (1B, Llama-backbone) — best-in-class for multi-speaker / non-verbal cues per 2026 benchmarks, also reference-based. Larger, slower, more unknowns.
+- **Dia** (Nari Labs) — inline emotion tags in text (`(sighs)`, `(whispers)`). Different workflow; less battle-tested.
+- **Full swap to any of these** — loses Kokoro's speed + determinism for the narrator lines which are already good.
+- **Hybrid per-speaker backend assignment** — keep Kokoro where it works (narrators + British voices), swap to Chatterbox where it doesn't (emotional American characters).
+
+**Decision.** Hybrid (Option D). Kokoro for narrator voices; Chatterbox for emotional characters. Reference clips sourced from LibriVox public-domain audiobook readings (Great Gatsby entered US PD Jan 2021; P&P always). Implementation happens on a separate branch (`claude/hybrid-chatterbox`) via a worktree so main stays clean.
+
+**Consequences.**
+- Cast schema extends from `{character: voice_id}` to `{character: {voice, backend}}` with backward-compat (bare strings keep resolving to the cast's default backend).
+- Per-speaker backend resolution in `pipeline/render.py`: load each needed backend once, dispatch per line. Existing `MLXKokoroBackend.__init__` pattern (hoist model load out of per-call path) reused.
+- `Emotion.intensity` finally maps to something real (Chatterbox's `exaggeration` slider). The Emotion dataclass was always designed as a superset — engines silently ignore what they can't do. Chatterbox finally uses the full shape.
+- Future path open: Sesame CSM is a drop-in addition under the same ABC when/if Chatterbox hits a ceiling of its own.
+
+**Retrospective lesson.** *Before tuning a component, know its inputs.* I spent an iteration tuning prosody around Kokoro before re-reading its architecture note — if I had re-read earlier, I would have stopped at "Kokoro takes text + speed, nothing else" and escalated to Chatterbox immediately. The rule to internalize: *when a component's output lacks a property, check whether the component has an input for that property before trying to compensate around it.*

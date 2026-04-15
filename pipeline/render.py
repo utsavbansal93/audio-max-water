@@ -21,9 +21,11 @@ from tts import Emotion, get_backend
 from tts.backend import TTSBackend
 
 
+import shutil
+
 REPO = Path(__file__).resolve().parents[1]
 CFG = yaml.safe_load((REPO / "config.yaml").read_text())
-FFMPEG = "/opt/homebrew/bin/ffmpeg"
+FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
 
 
 def _line_hash(line: LineModel, voice_id: str) -> str:

@@ -11,10 +11,12 @@ import yaml
 from pipeline.schema import ScriptModel
 
 
+import shutil
+
 REPO = Path(__file__).resolve().parents[1]
 CFG = yaml.safe_load((REPO / "config.yaml").read_text())
-FFMPEG = "/opt/homebrew/bin/ffmpeg"
-FFPROBE = "/opt/homebrew/bin/ffprobe"
+FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 
 def _duration_ms(path: Path) -> int:

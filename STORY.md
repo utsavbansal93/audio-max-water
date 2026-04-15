@@ -196,3 +196,30 @@ The fix was three lines: load once in `MLXKokoroBackend.__init__`, pass the inst
 - *Script format vs prose format as a source-language choice* — a DSL decision with real consequences: script format hands emotion direction to the user, prose hands it to the LLM. Choose per use case.
 - *Attention-cost defaults* — any automated action that hits a sensory channel (audio output, flashing UI, vibration) deserves an opt-in default, not an opt-out default.
 - *Explain-at-introduction for new metrics* — the time to explain a measurement is when it first appears in a log, not when someone asks later. Same applies to new symbols, abbreviations, thresholds.
+
+---
+
+## 2026-04-16 · Day 1 (iteration 8) — the Kokoro ceiling, named honestly, and the decision to escalate
+
+**What you said.** "The emotions are not coming, and it doesn't seem to be your change in pauses. Pauses didn't affect much so you might as well revert." On the Gatsby line right after *"his face now glowing with a sudden, almost pathetic joy"* the delivery was flat. That sentence is the test — if a voice cannot carry emotion through that setup, no amount of silence around it will fix the line.
+
+**What I had to admit.** The drama-amp changes (iteration 7) moved measurable numbers without moving the thing you were hearing for. I reverted the commit (`b852045`). Good revert discipline says: if the change did not achieve its stated goal, take it out; if it did something else useful, justify it separately. It didn't, so it's gone.
+
+**What I had to re-learn.** *Before tuning a component, know its inputs.* Kokoro's architecture note is public — StyleTTS2-style, non-autoregressive, no emotion or prosody input beyond text + speed. If I had re-read that *before* iteration 7, I'd have stopped at "the knob you want doesn't exist in this engine" and escalated to Chatterbox right then. Instead I spent a cycle building prosody scaffolding around a component that would never modulate the way we needed. The lesson generalized: *when a component's output lacks a property, check whether the component has an input for that property before trying to compensate around it.* Add to the concept bucket.
+
+**The escalation decision.** Four options surveyed (Chatterbox, Sesame CSM, Dia, pure-Kokoro-forever). Three of the four involve switching or adding engines. You picked **Option D: hybrid** — Kokoro for narrators where it already works, Chatterbox for emotional characters where it doesn't. That's the narrowest commitment that addresses the real problem: Kokoro narrators are GOOD, don't break what works. The swappable-backend abstraction we built on Day 1 (DECISIONS.md #0004) is what makes this cheap — one new backend file, a small cast-schema extension, and the pipeline doesn't notice.
+
+**Reference voices: LibriVox.** Great Gatsby entered US public domain Jan 2021. Multiple LibriVox readings exist. Chapter 5 has the reunion scene — every reader voices Gatsby and Daisy there, so one download gives us both references. P&P readings have been available forever; Karen Savage's is well-known. Extract 10–15 s clips per character, log attribution in `voice_samples/SOURCES.md`, legal + auditable.
+
+**What's shipping on main in this consolidation.**
+- The README is now *for a user landing on the repo cold*. A stranger in 90 seconds. Not Claude. Not us. Added a *Modifying for your system* section — Linux / CUDA / CPU-only / Windows — so the project isn't implicitly Mac-only.
+- A portability refactor: four pipeline modules now resolve `ffmpeg` / `ffprobe` via `shutil.which()` instead of hard-coding `/opt/homebrew/bin/` — if you want to actually run this on Linux, you need this.
+- `.gitignore` cleanup — `build_*/` artifacts were leaking into `git status` for iterations; now ignored properly while keeping the authored `script.json` files in history.
+- Logs reflect the Kokoro-ceiling decision and the direction (DECISIONS #0011).
+
+**What ships on the new branch.** Phase C, via a worktree at `claude/hybrid-chatterbox`. Chatterbox backend, schema extension, LibriVox sourcing, re-rendered Gatsby. Merge path is a PR once you approve the re-render.
+
+**Concept bucket (added).**
+- *Know the inputs before tuning the outputs.* The cost of this mistake was one iteration of scaffolding around a dead-end component. The habit to build: for any component you're about to tune, write down its actual input surface from the docs — not from memory, not from what you wish it had. The knob you want may not exist, and you'll have saved a cycle.
+- *Revert discipline.* When a change doesn't meet its stated goal, the first move is to take it out. If some *part* of the change was useful for an unrelated reason, that's a separate, smaller PR with its own justification. Don't keep noise in the codebase because some fraction of it accidentally helped.
+- *Narrow the commitment when part of the system already works.* Hybrid is Option D because Option A (full swap) would unnecessarily replace a working component (Kokoro narrators). When something is genuinely working, don't touch it — upgrade only the broken part.

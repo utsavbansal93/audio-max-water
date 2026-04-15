@@ -1,0 +1,162 @@
+{
+  "title": "The Reunion at West Egg",
+  "book_context": "From F. Scott Fitzgerald's 'The Great Gatsby', Chapter 5. Nick Carraway narrates from first person — he has just orchestrated, at Gatsby's anxious request, a meeting between Gatsby and Daisy Buchanan at Nick's cottage in West Egg. Gatsby and Daisy were lovers five years earlier before Gatsby went to war; in his absence she married Tom Buchanan, old money and brutish. Gatsby has spent those five years amassing his mysterious fortune purely to win her back — buying the mansion directly across the bay from hers so he can watch her green light at night. This reunion is the goal of everything he has built. For the first minutes he is paralyzed with terror (the 'strained counterfeit of boredom' — he is pretending not to care). Daisy is frightened and brittle — she too must pretend this is casual. The clock is a famous Fitzgerald symbol: the five lost years they cannot get back; it nearly falls, Gatsby nearly drops it — his own past is literally slipping through his hands. Then, midway, the terror cracks and Gatsby turns radiant. The scene is the novel's emotional axis. The narrator (Nick) is warm, observant, slightly rueful — he is witnessing two people resurrect something that probably cannot be resurrected. Daisy's voice must have the 'sad, lovely' quality Nick describes elsewhere as 'full of money' — enchanting, breathy, already on the verge of heartbreak. Gatsby oscillates from hollow-automatic to almost-pathetic joy within a minute.",
+  "characters": [
+    {
+      "name": "narrator",
+      "age_hint": "early 30s",
+      "gender": "male",
+      "accent": "en-US",
+      "personality": "Nick Carraway — warm, observant, introspective, gently rueful; first-person novelist-narrator",
+      "sample_lines": [
+        "I walked out of the room and left them there together.",
+        "I looked at them and they looked back at me, remotely, possessed by intense life."
+      ]
+    },
+    {
+      "name": "Gatsby",
+      "age_hint": "early 30s",
+      "gender": "male",
+      "accent": "en-US",
+      "personality": "charismatic, self-invented, haunted; here swings from paralyzed terror to radiant joy within a minute",
+      "sample_lines": [
+        "Five years next November.",
+        "Absolutely. I keep it full of interesting people, night and day."
+      ]
+    },
+    {
+      "name": "Daisy",
+      "age_hint": "late 20s",
+      "gender": "female",
+      "accent": "en-US",
+      "personality": "bright, enchanting, brittle; Fitzgerald's 'voice full of money' — sad, lovely, always on the edge of breaking",
+      "sample_lines": [
+        "We haven't met for many years.",
+        "You're sure you want us to come?"
+      ]
+    }
+  ],
+  "chapters": [
+    {
+      "number": 1,
+      "title": "The Reunion at West Egg",
+      "lines": [
+        {
+          "speaker": "narrator",
+          "text": "The Reunion at West Egg",
+          "emotion": {"label": "formal", "intensity": 0.4, "pace": -0.15, "notes": "Chapter heading. Slightly softer than Austen — American rather than British literary tone."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Gatsby, his hands still in his pockets, was reclining against the mantelpiece in a strained counterfeit of perfect ease, even of boredom.",
+          "emotion": {"label": "dry", "intensity": 0.5, "pace": -0.05, "notes": "Nick's wry observation — the word 'counterfeit' is doing all the work. We're supposed to see through Gatsby's pose from the first sentence."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "His head leaned back so far that it rested against the face of a defunct mantelpiece clock, and from this position his distraught eyes stared down at Daisy, who was sitting, frightened but graceful, on the edge of a stiff chair.",
+          "emotion": {"label": "calm", "intensity": 0.55, "pace": -0.1, "notes": "The tableau — the famous clock setup. Slightly slower, painterly. 'Distraught eyes', 'frightened but graceful' — carry the weight of those words."}
+        },
+        {
+          "speaker": "Daisy",
+          "text": "We haven't met for many years.",
+          "emotion": {"label": "calm", "intensity": 0.35, "pace": -0.05, "notes": "STAGE DIRECTION: 'Her voice as matter-of-fact as it could ever be.' Flat on purpose — she is hiding everything. Low intensity is correct; the emotional weight comes from the contrast with what she feels underneath. Let it sit quiet."}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "Five years next November.",
+          "emotion": {"label": "awkward", "intensity": 0.85, "pace": -0.3, "notes": "STAGE DIRECTION: 'In a hollow, automatic voice.' He has kept the count to the month for five years. The answer escapes him before he can make it casual — it's rehearsed despair. MUCH slower than baseline, weighted. The drama-punctuation ellipsis should trail the line."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The automatic quality of Gatsby's answer set us all back at least another minute.",
+          "emotion": {"label": "dry", "intensity": 0.5, "pace": 0.0, "notes": "Nick reasserting narrative control — almost deadpan reaction to the awkwardness."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "I had them both on their feet with the desperate suggestion that they help me make tea in the kitchen when the demoniac Dane arrived with the cups and lemons.",
+          "emotion": {"label": "wry", "intensity": 0.55, "pace": 0.05, "notes": "The word 'desperate' and 'demoniac Dane' are comic relief — Nick scrambling to break the tension. Slight pickup in pace to convey the scrambling."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Amid the welcome confusion the clock took this moment to tilt dangerously at the pressure of Gatsby's head, whereupon he turned and caught it with trembling fingers and set it back in place.",
+          "emotion": {"label": "anxious", "intensity": 0.7, "pace": -0.05, "notes": "Build tension through the sentence — the clock is the past, it is literally falling, he is literally catching it. 'Trembling fingers' must land. This is the physical comedy that is also the emotional center of the scene."}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "I'm sorry about the clock.",
+          "emotion": {"label": "embarrassed", "intensity": 0.8, "pace": -0.25, "notes": "STAGE DIRECTION: 'Looking at the clock and then at me.' Small, apologetic, exposed — the most vulnerable Gatsby has sounded in the novel so far. Not a performance. Slow and deliberate, near-whisper energy."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "It's an old clock.",
+          "emotion": {"label": "calm", "intensity": 0.4, "pace": -0.05, "notes": "Nick's lie of kindness — covering Gatsby's embarrassment. Matter-of-fact, gentle."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "I think we all believed for a moment that it had smashed in pieces on the floor.",
+          "emotion": {"label": "wry", "intensity": 0.55, "pace": -0.05, "notes": "Nick's return to wry distance — but 'smashed in pieces' is doing symbolic heavy-lifting. The listener doesn't need to be hit over the head with it; let the words carry."}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "It's stopped.",
+          "emotion": {"label": "vulnerable", "intensity": 1.0, "pace": -0.5, "notes": "STAGE DIRECTION: 'With an expression of bewildered intensity.' Two words doing enormous work. Time has stopped for him, literally, in this moment with her. Maximum pace-slowdown + drama-punctuation trail. Peak of terror-phase. Longest pause before and after this line in the whole chapter."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "I looked at them and they looked back at me, remotely, possessed by intense life.",
+          "emotion": {"label": "calm", "intensity": 0.6, "pace": -0.15, "notes": "The famous line. 'Remotely, possessed by intense life' — two of the people in the room have disappeared into each other. Deliver slowly, reverent, the camera pulling back."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Then, as I moved toward the door, Gatsby spoke again, his face now glowing with a sudden, almost pathetic joy.",
+          "emotion": {"label": "hopeful", "intensity": 0.6, "pace": -0.05, "notes": "Pivot. 'Almost pathetic joy' is Fitzgerald's killer qualifier — the joy is real AND we are asked to see how fragile it is. Narrator's tone tilts from observing to being moved."}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "I want you and Nick to come over to my house.",
+          "emotion": {"label": "excited", "intensity": 0.9, "pace": 0.05, "notes": "STAGE DIRECTION: 'To Daisy.' The terror has broken. He has a plan again — show her the house he built for her. Forward lean, warmer, fully present."}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "I'd like to show you around.",
+          "emotion": {"label": "tender", "intensity": 0.9, "pace": -0.2, "notes": "Slower contrast to the previous line — vulnerability returning underneath the excitement. The house IS the gesture of love; showing her is what this whole five years has been for. Deliberate slowdown for contrast."}
+        },
+        {
+          "speaker": "Daisy",
+          "text": "You're sure you want us to come?",
+          "emotion": {"label": "tender", "intensity": 0.9, "pace": -0.3, "notes": "STAGE DIRECTION: 'Looking up at him with bright, wet eyes.' She is crying without letting it be crying. The word 'sure' is the tell — she is checking whether this gesture is real. Very slow and quiet. This line must feel held, near-whispered — the emotional counterpart to Gatsby's 'It's stopped.'"}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "Absolutely.",
+          "emotion": {"label": "joy", "intensity": 1.0, "pace": 0.0, "notes": "STAGE DIRECTION: 'Radiant now.' No doubt, no guarding, full voice. The pivot complete — terror to triumph. Drama-punctuation ellipsis will trail it into the next line. Peak joy-intensity."}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "I keep it full of interesting people, night and day.",
+          "emotion": {"label": "joy", "intensity": 0.85, "pace": 0.1, "notes": "Salesman mode — selling her the life she could have. Forward pace, confident, riding the wave of 'Absolutely.'"}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "People who do interesting things.",
+          "emotion": {"label": "excited", "intensity": 0.8, "pace": 0.05, "notes": "Rolling through the pitch."}
+        },
+        {
+          "speaker": "Gatsby",
+          "text": "Celebrated people.",
+          "emotion": {"label": "excited", "intensity": 0.95, "pace": -0.15, "notes": "The word Gatsby lands on, proud and a little naïve — the very thing he thinks will impress her. Slower-and-weighted for punchline emphasis after the rolling pitch. Drama-punctuation ellipsis trails."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "I walked out of the room and left them there together.",
+          "emotion": {"label": "calm", "intensity": 0.55, "pace": -0.1, "notes": "Nick's exit. The intimate close-on-two-people moment. Gentle, self-effacing, the narrator stepping out of his own scene."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The rain was still falling, but the darkness had parted in the west and there was a pink and golden billow of foamy clouds above the sea.",
+          "emotion": {"label": "warm", "intensity": 0.65, "pace": -0.15, "notes": "The final cadence. Fitzgerald's signature weather-as-emotion — the rain hasn't stopped but the darkness has parted. Pink and gold are the colors of Gatsby's dream. Read slowly, warmly, like the end of a paragraph that is also the end of a chapter of someone's life."}
+        }
+      ]
+    }
+  ]
+}
