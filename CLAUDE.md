@@ -10,6 +10,7 @@ Every change to this repo MUST update the relevant log **in the same turn as the
 - **Non-obvious choice** (picking one approach over another, rejecting a library, changing an abstraction) → add a numbered entry to `DECISIONS.md` with **Context / Options / Decision / Consequences**.
 - **Anything worth retrospecting** (a false start, a surprising model behavior, a moment where the user made a judgment call, a failed experiment, a concept worth learning) → append to `STORY.md` as a dated narrative entry. Attribute decisions explicitly: "user chose X" vs "assistant chose X" and why.
 - **Install / run / architecture change** → update the relevant `README.md` sections. If the change invalidates example commands, fix the examples.
+- **Any render / tune / experiment** (new backend, new cast, new pause rule, new voice swap, anything that changes audio output) → run `python -m pipeline.bench --target '<label>' --notes '<short description>'` so a row is appended to `BENCHMARKS.md`. This is the performance time series for regression catching and retrospective analysis. Never skip it.
 
 Do not defer log updates "to the end" — writing them live captures real-time reasoning, not post-hoc reconstruction.
 

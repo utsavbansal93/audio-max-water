@@ -56,6 +56,23 @@ _VOICES: list[Voice] = [
 ]
 
 
+def _pronounce(text: str) -> str:
+    """Normalize text for natural speech without mutating the script.
+
+    Kept here (backend-local) rather than in script.json because it's a
+    rendering concern — the faithful-wording contract preserves source text.
+    """
+    import re as _re
+    # Slashes in name pairs and common slash-as-conjunction usages should read
+    # as "and". ("Lydia/Wickham" → "Lydia and Wickham")
+    text = _re.sub(r"(?<=\w)/(?=\w)", " and ", text)
+    # Common standalone symbols that Kokoro would spell out.
+    text = text.replace("&", " and ")
+    # Collapse any double spaces we introduced.
+    text = _re.sub(r"\s+", " ", text)
+    return text
+
+
 class KokoroBackend(TTSBackend):
     name = "kokoro"
 
@@ -83,6 +100,7 @@ class KokoroBackend(TTSBackend):
     ) -> tuple[bytes, int]:
         if not text.strip():
             raise ValueError("synthesize() called with empty text")
+        text = _pronounce(text)
 
         # Map Emotion.pace → speed multiplier (Kokoro's only "emotion" lever).
         # pace is in [-1, +1]; widened coefficient so pace: -0.3 = ~0.92x speed,

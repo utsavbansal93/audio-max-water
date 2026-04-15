@@ -50,6 +50,17 @@ Or the one-shot convenience:
 make audiobook STORY=stories/my_story.md
 ```
 
+## Quality-check & benchmarks
+
+```bash
+.venv/bin/python -m pipeline.qa --whisper                              # mech QA + Whisper round-trip
+.venv/bin/python -m pipeline.bench --target "<label>" --notes "<what changed>"
+```
+
+`pipeline.qa` flags duration/peak/RMS/pacing anomalies and (with `--whisper`) transcribes the chapter MP3 via `faster-whisper` and diffs against the script — catches mispronunciations and dropped words.
+
+`pipeline.bench` renders + runs QA + appends a row to `BENCHMARKS.md` (commit SHA, wall-clock, audio duration, RTF, QA pass rate, Whisper similarity, notes). Run this on every tune-or-experiment so the perf time series stays intact — see `CLAUDE.md`.
+
 ## Run (web UI, Phase 2)
 
 Not yet. Layered on after the CLI is solid.

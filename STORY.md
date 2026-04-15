@@ -86,3 +86,36 @@ This trade-off is the key concept worth remembering. Any TTS evaluation collapse
 - *Tuning before switching* — the rule of thumb for any ML pipeline: exhaust the free / cheap params of the current component before swapping the component itself. Switching adds whole new failure modes; tuning only narrows the existing ones.
 - *Structural prosody vs engine prosody* — silence, pacing, and line-breaks are expressive even with a "flat" voice. This is why audiobook editors obsess over pauses.
 - *The 0.8×/2.2× pattern* — same-speaker continuations want shorter gaps (rhetorical flow); speaker handoffs want longer gaps (breath, attention reset). You can hear the difference as "this is one person thinking" vs "these are two people talking."
+
+---
+
+## 2026-04-16 · Day 1 (iteration 3) — you caught three gaps I hadn't addressed
+
+**Your feedback.** "Much better. Narrator pauses were a bit awkward once or twice, but otherwise pretty good. BTW, did you use the tool-search skill when looking for models? Also did you check what the best approach could be for doing such a thing or are you going by your default knowledge? Do you have an auto AI tester which can listen to audio samples generated and test for quality before asking the human user to check?"
+
+Three questions, each pointing at a real hole in how I was working.
+
+**What I admitted, and what I did about each.**
+
+1. **Tool-search / web search: no, I hadn't.** I went by training-knowledge TTS picks (Kokoro / Chatterbox / XTTS). Running a web search in this iteration surfaced five meaningful models I'd missed (Sesame CSM, F5-TTS, Dia, MLX-Audio, Chatterbox-Turbo) plus three audiobook-specific repos (`chatterbox-Audiobook`, `local-tts-studio`, `epub2tts`) that would have saved work if I'd found them on Day 1. Documented as `DECISIONS.md #0008` with a retrospective lesson: *always research before committing to a primary dependency — "going from training knowledge" is invisible tech debt*.
+
+2. **Auto AI audio-quality tester: not really, and I was honest about the limits.** Claude Code in this session doesn't accept audio input. What IS available is *mechanical* QA (duration, peak dB, RMS, words-per-second, per-voice loudness consistency) + *Whisper round-trip* (transcribe the WAV, diff against script text). Built both as `pipeline/qa.py`. On the first run it immediately caught "Lydia/Wickham" being pronounced "lydia slash wickham" — a bug that would have been painful to hear on a long render. Fixed by adding `_pronounce()` inside the Kokoro backend (pronunciation is a rendering concern, not a script concern — preserved faithful-wording).
+
+3. **Narrator pause awkwardness: diagnosed and fixed.** The culprit was "he replied," — a short narrator line between two Darcy lines. My earlier rule gave it 2.2× speaker-change gap on both sides, so the tag sounded detached from the dialogue. Fix: structural inline-tag detection. A narrator line that is (a) short, (b) sandwiched between same-speaker dialogue, and (c) starts with a known tag phrase gets 0.4× base gap on both sides — so it hugs the dialogue. Same-speaker narrator-to-narrator got bumped from 0.8× to 1.2× (prose sentences need breathing room, which I'd under-weighted). See `DECISIONS.md #0005`.
+
+**Then you asked two more things mid-flight**, both right on the money:
+
+4. **"What would it take to use MLX-Audio?"** Low cost — one new backend file, same voice list, same Kokoro weights, just MLX's inference path. Expected 2-3× speedup on M3. Queued as the immediate next commit after this one so the diff is cleanly isolated (and we can A/B against today's torch baseline).
+
+5. **"Log performance benchmarks with every change."** Built `BENCHMARKS.md` + `pipeline/bench.py`. Every render-touching iteration runs `python -m pipeline.bench --target … --notes …` which appends a row with commit SHA, wall-clock render, audio duration, RTF, QA pass rate, Whisper similarity, and notes. Added to `CLAUDE.md` as a hard rule so future sessions don't skip it. This iteration already posted a row: RTF 0.21 (Kokoro on M3 renders ~5× faster than realtime), QA 16/16, Whisper 0.973.
+
+**What this teaches.**
+
+- *You were three steps ahead of me on each question*: tool-search, AI QA, and performance benchmarks are all structural improvements I should have proposed. The pattern in my failure mode is **optimizing within a narrow loop** (get the output sounding better this iteration) rather than **widening the loop** (what systems around the loop would prevent regressions or catch what I can't hear). Worth flagging as a recurring bias to watch for.
+- *Whisper round-trip is unreasonably useful for the cost.* 4-6 seconds per chapter and it caught the "slash" bug instantly. This is the "cheap signal that catches expensive mistakes" pattern — always worth looking for.
+- *The inline-tag detection is a microcosm of the faithful-wording contract pattern.* When the data contract says "don't mutate X," the mutation has to happen in a layer that isn't bound by the contract. Tag-detection happens at render time; pronunciation normalization happens in the backend; both leave `script.json` byte-faithful. Keep finding the right layer instead of breaking the contract.
+
+**Concept bucket (added).**
+- *"Widen the loop" bias check* — after solving a local problem, ask: what system around this loop would prevent the next surprise? Before-this-iteration the loop was "render → listen → tweak"; after it's "research → render → auto-QA → listen → tweak → record." The wider loop is where regressions get caught automatically.
+- *The Whisper-round-trip pattern* — use a second model to verify the first. Applies far beyond TTS: any "generate X from spec" pipeline benefits from "re-extract the spec from X and diff."
+- *The "right layer" discipline for data contracts* — pronunciation-normalization inside the backend, pause-detection inside the renderer, emotion in the script — each concern at the layer where it naturally lives. When you feel tempted to mutate the script to fix a rendering bug, that's a smell that the fix belongs elsewhere.

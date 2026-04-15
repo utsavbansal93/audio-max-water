@@ -57,3 +57,72 @@ Lightweight ADR log. Format per entry: **Context / Options / Decision / Conseque
 **Decision.** Plain ABC in `tts/backend.py`, factory `get_backend(name)` with a hardcoded dispatch. Adding an engine = one file + one line in the factory.
 
 **Consequences.** Trivial to extend; no packaging overhead. The ABC's `Emotion` dataclass is a *superset* — engines silently ignore unsupported fields, so pipeline data structures never fork per engine.
+
+---
+
+## 0005 · 2026-04-16 · Inline dialogue-tag detection for pause logic
+
+**Context.** After tuning emotion-aware pauses, user heard "once or twice awkward narrator pauses." Diagnosis: a narrator line that's actually a dialogue tag ("he replied," between two Darcy lines) was getting the full 2.2× speaker-change gap on both sides, so the tag sounded detached from the dialogue it attributes.
+
+**Options considered.**
+- Make tags shorter inside the script (e.g., glue Darcy's opening to "he replied," as one line via text tricks) — breaks faithful-wording.
+- Move pause decisions to prompt time (Opus emits `pause_before_ms`) — leaks prosody concerns into the parsing layer.
+- Detect inline tags in the renderer from structural signals (short, narrator, sandwiched between same-speaker dialogue, starts with a known tag phrase).
+
+**Decision.** Structural detection in `pipeline/render.py::_is_inline_tag`. Tags get 0.4× base gap on both sides; non-tag narrator-to-narrator gets 1.2× base (room for prose sentences); same-speaker dialogue fragments get 0.9× base (flowing rhetoric).
+
+**Consequences.** Fixes the awkwardness without touching the script or the backend. The detector is heuristic (short + sandwiched + tag-starts) — may miss exotic tags. Monitoring: if QA flags a short narrator line with unusual RMS, that's often a misclassified tag.
+
+---
+
+## 0006 · 2026-04-16 · Pronunciation normalize inside Kokoro backend, not script
+
+**Context.** QA caught "Lydia/Wickham" being spoken as "Lydia slash Wickham" by Kokoro. Fix location is a trade-off: the script preserves source text faithfully; the engine reads it literally.
+
+**Options considered.**
+- Change `script.json` text to "Lydia and Wickham" — fails faithful-wording validator.
+- Add a preprocessing hook in the pipeline between script and backend — another pipeline step to maintain.
+- Put normalization inside the Kokoro backend (`_pronounce`).
+
+**Decision.** Pronunciation is a rendering concern; put `_pronounce()` inside `tts/kokoro_backend.py`. Each backend can have its own (Chatterbox may not need one; Sesame may need more). Script text stays byte-verbatim.
+
+**Consequences.** Backends drift in how they handle odd symbols, but that's correct — each engine has different literal-reading quirks. If we switch backends we may need to tune the normalizer per engine.
+
+---
+
+## 0007 · 2026-04-16 · Automated QA + Whisper round-trip before human review
+
+**Context.** Only the user can judge "does it sound good," but many failure modes are cheap to detect mechanically. Running objective QA first reduces the cost of each human listen.
+
+**Options considered.**
+- Pass rendered audio to a multimodal LLM (Gemini 2.5) for "does this sound natural" — blocked by Claude Code not having audio input and the added cost of API-based eval.
+- Signal-processing checks only (duration, peak, RMS, pacing) — catches gross defects but not mispronunciations.
+- Signal-processing + Whisper round-trip — transcribes audio back to text, diffs against script. Catches dropped words, literal mispronunciations, slash-as-"slash" bugs.
+
+**Decision.** Add `pipeline/qa.py` with signal-processing checks + optional Whisper round-trip via `faster-whisper` (base.en, local, int8). Multimodal AI listening is a future follow-up if needed.
+
+**Consequences.** Non-zero render time overhead for Whisper (~4-6 s for a 1.5-min chapter on M3 CPU). Value: the "slash" bug was caught mechanically on first run. Decision to escalate to a full LLM listener is deferred until Whisper-catchable defects stop being the limiting factor.
+
+---
+
+## 0008 · 2026-04-16 · TTS research findings — backends to add later
+
+**Context.** Initial TTS selection (Kokoro / Chatterbox / XTTS) was from training knowledge, not current research. Web search in this session surfaced several 2025–2026 models that weren't in the original comparison.
+
+**Findings.**
+- **MLX-Audio** (Blaizzy/mlx-audio): runs Kokoro natively on Apple Silicon's Neural Engine / GPU via MLX. ~2-3× faster inference than our current torch path. Same model weights.
+- **Sesame CSM** (1B, Llama-based, from Sesame Labs): specifically designed for multi-speaker conversational speech. Best-in-class for non-verbal cues and subtle tones. Directly relevant to our full-cast use case.
+- **F5-TTS**: "most well-rounded" per 2026 speech benchmarks; strong voice cloning.
+- **Chatterbox-Turbo**: 350M params, single-step diffusion — much faster than the version originally planned.
+- **Dia** (Nari Labs): supports inline non-verbal tags `(sighs)`, `(whispers)`, `(laughs)` — natural fit for our `Emotion.notes` field.
+- **Prior art**: `chatterbox-Audiobook`, `local-tts-studio`, `epub2tts` already exist for audiobook generation. Worth mining for pause/chunking patterns.
+
+**Decision.** Keep Kokoro as the current default (Kokoro is good enough for the current scene per user review). Add backends in order of expected payoff under the same `TTSBackend` ABC:
+1. **mlx-kokoro** (free speedup, same output quality) — next.
+2. **sesame-csm** (expected bigger emotional range for multi-speaker) — when Kokoro's ceiling is hit.
+3. **dia** (non-verbal cue support) — when stylized emotional moments need explicit "(sigh)" tags.
+4. **chatterbox-turbo** / **f5-tts** (voice cloning path) — only if user wants specific voices sourced from real-actor samples.
+
+**Consequences.** We were moving without knowing what we were missing. Correcting that now via research and adding one at a time, each behind the swappable backend interface so we can A/B without pipeline changes.
+
+**Retrospective lesson.** Always run the tool-search / web-search step *before* committing to a primary dependency. "Going from training knowledge" is a cheap-looking choice that accumulates as invisible tech debt.

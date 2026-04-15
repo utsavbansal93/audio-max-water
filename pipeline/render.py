@@ -35,27 +35,81 @@ def _line_hash(line: LineModel, voice_id: str) -> str:
     return hashlib.sha1(payload.encode()).hexdigest()[:12]
 
 
-def _pause_for(prev: LineModel | None, cur: LineModel) -> int:
+_TAG_STARTS = (
+    "he said", "she said", "he replied", "she replied", "he added", "she added",
+    "he asked", "she asked", "he whispered", "she whispered", "he answered",
+    "she answered", "he muttered", "she muttered", "he continued", "she continued",
+    "her companion", "his companion",
+)
+
+
+def _is_inline_tag(prev: LineModel | None, cur: LineModel, nxt: LineModel | None) -> bool:
+    """Detect a narrator line that is a dialogue attribution tag.
+
+    An inline tag is a short narrator line sandwiched between two dialogue
+    lines of the same speaker ("he replied," between two Darcy lines). These
+    should hug both sides — full speaker-change pauses make them sound
+    detached from the dialogue they attribute.
+    """
+    if cur.speaker != "narrator":
+        return False
+    if prev is None or nxt is None:
+        return False
+    if prev.speaker == "narrator" or nxt.speaker == "narrator":
+        return False
+    if prev.speaker != nxt.speaker:
+        return False
+    text_norm = cur.text.strip().lower().rstrip(",.;:")
+    # Short + starts with a known tag → treat as inline.
+    if len(cur.text) <= 60 and any(text_norm.startswith(t) for t in _TAG_STARTS):
+        return True
+    # Even shorter fallback: very short narrator line between same-speaker
+    # dialogue is almost always a tag.
+    if len(cur.text) <= 30:
+        return True
+    return False
+
+
+def _pause_for(
+    prev: LineModel | None,
+    cur: LineModel,
+    nxt: LineModel | None = None,
+    prev_is_inline_tag: bool = False,
+) -> int:
     """Silence gap in ms before `cur` line.
 
-    Drama dial: higher intensity on either side of a boundary lengthens the
-    pause. Speaker changes get a longer pause than same-speaker continuations.
-    Emotional peaks (intensity > 0.7) get a held-breath approach.
+    Rules:
+      - First line: no pause.
+      - Inline dialogue tag (cur is the tag): tiny pause (0.4× base).
+      - Line after an inline tag: also tiny — the dialogue should flow past.
+      - Speaker change (real handoff): 2.2× base, plus emotion surcharges.
+      - Same-speaker narrator→narrator: 1.2× base (prose continuity).
+      - Same-speaker dialogue beats: 0.9× base (rhetorical flow).
+      - Emotional peaks on either side: add held-breath / ring-out.
+      - Slow pace (pace < -0.15): add approach time.
     """
     base = CFG["output"]["line_pause_ms"]
     if prev is None:
         return 0
 
+    # Inline tag cases hug the surrounding dialogue tightly.
+    if _is_inline_tag(prev, cur, nxt):
+        return int(base * 0.4)
+    if prev_is_inline_tag:
+        return int(base * 0.4)
+
     speaker_change = prev.speaker != cur.speaker
     cur_int = cur.emotion.intensity
     prev_int = prev.emotion.intensity
 
-    # Speaker change: dialogue handoff gets breathing room.
     if speaker_change:
         gap = int(base * 2.2)
+    elif cur.speaker == "narrator":
+        # Narrator continuations = sentence-to-sentence prose. Needs room.
+        gap = int(base * 1.2)
     else:
-        # Same speaker: shorter baseline between rhetorical beats.
-        gap = int(base * 0.8)
+        # Same-speaker dialogue: rhetorical flow between fragments.
+        gap = int(base * 0.9)
 
     # Emotional approach: held breath before a weighty line.
     if cur_int >= 0.75:
@@ -96,13 +150,17 @@ def render_chapter(
 
     wav_paths: list[Path] = []
     prev: LineModel | None = None
-    for idx, line in enumerate(chapter.lines, start=1):
+    prev_was_inline_tag = False
+    lines_list = chapter.lines
+    for idx, line in enumerate(lines_list, start=1):
         voice_id = cast.mapping[line.speaker]
         h = _line_hash(line, voice_id)
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in line.speaker)
         wav_path = lines_dir / f"{idx:04d}_{safe_name}_{h}.wav"
 
-        pause_ms = _pause_for(prev, line)
+        nxt = lines_list[idx] if idx < len(lines_list) else None
+        pause_ms = _pause_for(prev, line, nxt, prev_is_inline_tag=prev_was_inline_tag)
+        prev_was_inline_tag = _is_inline_tag(prev, line, nxt)
         if pause_ms > 0:
             silence_path = lines_dir / f"{idx:04d}_silence_{pause_ms}ms.wav"
             if not silence_path.exists():
