@@ -85,10 +85,15 @@ class KokoroBackend(TTSBackend):
             raise ValueError("synthesize() called with empty text")
 
         # Map Emotion.pace → speed multiplier (Kokoro's only "emotion" lever).
-        # pace is in [-1, +1]; 0.85..1.20 speed range feels natural.
+        # pace is in [-1, +1]; widened coefficient so pace: -0.3 = ~0.92x speed,
+        # pace: +0.3 = ~1.08x — gives noticeable slowing on tender/vulnerable beats.
         effective_speed = speed * self._default_speed
         if emotion is not None:
-            effective_speed *= 1.0 + 0.175 * emotion.pace
+            effective_speed *= 1.0 + 0.28 * emotion.pace
+            # High-intensity lines get a tiny additional deceleration so the
+            # actor "leans in" on the weighty lines.
+            if emotion.intensity >= 0.75:
+                effective_speed *= 1.0 - 0.04 * (emotion.intensity - 0.5)
 
         # Kokoro returns a generator of (graphemes, phonemes, audio) tuples,
         # one per sentence-ish chunk. Concatenate them into one clip.

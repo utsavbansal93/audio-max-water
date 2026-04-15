@@ -60,3 +60,29 @@ This trade-off is the key concept worth remembering. Any TTS evaluation collapse
 - *Single-signal bias in simple scoring functions* — one "jackpot" tag (George had `narrator` which the narrator-bonus doubled) can outvote multiple weaker signals. When that happens, the fix isn't always a smarter function; sometimes it's just "show the top-3 and let the human pick," which we did.
 
 **Commit.** `88d3435` pushed to `utsavbansal93/audio-max-water` (public). The pipeline is reproducible from a fresh clone + `.venv` + `pip install -e .` + `brew install espeak-ng ffmpeg`.
+
+---
+
+## 2026-04-16 · Day 1 (iteration 2) — "flat" → tuning levers before switching engines
+
+**Your feedback.** "It was a bit flat. Tweak params first before going for the heavy option of changing the model." And specific voice swaps: Darcy→Lewis, narrator→Isabella, Elizabeth→Emma.
+
+**The judgment this captured.** You read the situation correctly — *model selection is an expensive move, parameter tuning is cheap*. We have 3 levers in Kokoro before we need a different model: (1) voice choice, (2) prosody via `pace`, (3) line structure (splitting long sentences so the voice can re-attack). Exhaust those first.
+
+**What I changed, and why, in this iteration.**
+1. **Cast swap** applied directly to `cast.json` (the single source of truth). Lewis is BM adult, "deep, thoughtful" — a better age-match for Darcy (28) than George (mature). Isabella brings "refined, poised" to the narrator, a half-step more formal than Emma. Emma moves to Elizabeth — her warm+refined tags fit Elizabeth's humility in this scene better than Lily's youthful brightness, which was too buoyant for the post-Hunsford reconciliation mood.
+2. **Line splitting at rhetorical beats.** Darcy's two long paragraphs were each one script line. Kokoro delivered them as one breath each — which is exactly *flat*. Split into 4 fragments per speech at natural clauses, each with its own `intensity` and `pace`. The emotional arc now rises and falls: "Much as I respect them, I believe I thought only of you" is intensity 0.9, pace −0.3 — the peak of the first speech, whereas "If you will thank me," is only 0.6. Kokoro still doesn't have an emotion knob, but it has a *now-vs-next* structure it can hit, and short lines let it hit them.
+3. **Emotion-driven pauses** in `render.py`. Speaker changes get 2.2× base gap. High-intensity lines (≥0.75) get a held-breath approach; post-weighty lines get a ring-out. Slow-pace lines (`pace < -0.15`) get extra approach time. These are all free — Kokoro doesn't need to know about them; they're just silence gaps between its output WAVs.
+4. **Widened pace coefficient** in the Kokoro backend: 0.175 → 0.28. Small intensity-linked deceleration added. `pace: -0.3` now audibly slows, where before it was invisible.
+
+**What this teaches.** When an output is "flat" from a TTS with no emotion dial, the knobs you have are *structural* (where to cut, where to pause, which voice) and *prosodic* (pace, emphasis punctuation). You can get a lot of mileage out of those before the model itself is the bottleneck. This is the same insight that separated good radio editors from bad ones in the tape era — the material is fixed, but silence and cuts are expressive.
+
+**What I didn't change.** I still haven't touched:
+- Chatterbox/XTTS — on hold until we find Kokoro's ceiling.
+- LLM-driven casting — the heuristic kept working; your override was the right feedback-loop shape.
+- A live `pipeline/script.py` that calls Opus — still me-in-chat as the parser.
+
+**Concept bucket (added).**
+- *Tuning before switching* — the rule of thumb for any ML pipeline: exhaust the free / cheap params of the current component before swapping the component itself. Switching adds whole new failure modes; tuning only narrows the existing ones.
+- *Structural prosody vs engine prosody* — silence, pacing, and line-breaks are expressive even with a "flat" voice. This is why audiobook editors obsess over pauses.
+- *The 0.8×/2.2× pattern* — same-speaker continuations want shorter gaps (rhetorical flow); speaker handoffs want longer gaps (breath, attention reset). You can hear the difference as "this is one person thinking" vs "these are two people talking."

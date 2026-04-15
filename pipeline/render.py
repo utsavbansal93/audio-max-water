@@ -36,11 +36,39 @@ def _line_hash(line: LineModel, voice_id: str) -> str:
 
 
 def _pause_for(prev: LineModel | None, cur: LineModel) -> int:
-    """Silence gap in ms before `cur` line."""
+    """Silence gap in ms before `cur` line.
+
+    Drama dial: higher intensity on either side of a boundary lengthens the
+    pause. Speaker changes get a longer pause than same-speaker continuations.
+    Emotional peaks (intensity > 0.7) get a held-breath approach.
+    """
+    base = CFG["output"]["line_pause_ms"]
     if prev is None:
         return 0
-    # Paragraph / scene detection could live here; for v1, use line-level pause.
-    return CFG["output"]["line_pause_ms"]
+
+    speaker_change = prev.speaker != cur.speaker
+    cur_int = cur.emotion.intensity
+    prev_int = prev.emotion.intensity
+
+    # Speaker change: dialogue handoff gets breathing room.
+    if speaker_change:
+        gap = int(base * 2.2)
+    else:
+        # Same speaker: shorter baseline between rhetorical beats.
+        gap = int(base * 0.8)
+
+    # Emotional approach: held breath before a weighty line.
+    if cur_int >= 0.75:
+        gap += int(base * 1.4 * (cur_int - 0.5))
+    # Emotional aftermath: let a weighty previous line ring out.
+    if prev_int >= 0.75:
+        gap += int(base * 1.0 * (prev_int - 0.5))
+
+    # Pace < 0 means slow delivery — match it with a slightly longer approach.
+    if cur.emotion.pace < -0.15:
+        gap += int(base * abs(cur.emotion.pace) * 1.2)
+
+    return gap
 
 
 def _make_silence(ms: int, sr: int, path: Path) -> None:
