@@ -34,6 +34,7 @@ def build_m4b(
     chapter_mp3s: list[Path],
     out_dir: Path,
     title: str | None = None,
+    author: str | None = None,
 ) -> Path:
     script = ScriptModel.model_validate(json.loads(script_path.read_text()))
     chapters = script.chapters
@@ -51,6 +52,8 @@ def build_m4b(
 
     # 2. Build ffmetadata with chapter markers.
     ffmeta = [";FFMETADATA1", f"title={title}"]
+    if author:
+        ffmeta.append(f"artist={author}")
     cursor = 0
     for ch, mp3 in zip(chapters, chapter_mp3s):
         dur = _duration_ms(mp3)
@@ -87,18 +90,21 @@ def build_m4b(
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--script", default="build/script.json", type=Path)
-    ap.add_argument("--build",  default="build",             type=Path)
-    ap.add_argument("--out",    default="out",               type=Path)
+    ap.add_argument("--build",  default="build",  type=Path)
+    ap.add_argument("--out",    default="out",    type=Path)
     ap.add_argument("--title",  default=None)
+    ap.add_argument("--author", default=None)
+    # Default script to <build>/script.json so --build is the only required arg.
+    ap.add_argument("--script", default=None,     type=Path)
     args = ap.parse_args()
 
-    script = ScriptModel.model_validate(json.loads(args.script.read_text()))
+    script_path = args.script or (args.build / "script.json")
+    script = ScriptModel.model_validate(json.loads(script_path.read_text()))
     chapter_mp3s = [args.build / f"ch{ch.number:02d}" / f"chapter_{ch.number:02d}.mp3" for ch in script.chapters]
     missing = [p for p in chapter_mp3s if not p.exists()]
     if missing:
         raise SystemExit(f"Missing chapter MP3s: {missing}. Run pipeline.render first.")
-    out = build_m4b(args.script, chapter_mp3s, args.out, args.title)
+    out = build_m4b(script_path, chapter_mp3s, args.out, args.title, args.author)
     print("wrote", out)
 
 

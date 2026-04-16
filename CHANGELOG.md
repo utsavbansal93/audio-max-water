@@ -4,14 +4,24 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
-### Added (hybrid-chatterbox branch)
+### Fixed
+- `pipeline/package.py` — two metadata bugs: (1) `--script` defaulted to `build/script.json` regardless of `--build`, causing chapter titles to bleed from whichever story last used the default build dir; default is now `<build>/script.json` so `--build` is the single required arg. (2) `ffmetadata` never wrote `artist=`, producing "Unknown author" in all players; `--author` flag added and wired into the metadata block.
+
+### Added
 - `tts/chatterbox_backend.py` — Chatterbox TTS backend (Resemble AI, autoregressive Llama-0.5B backbone). Maps `Emotion.intensity` → `exaggeration` (0.30–0.95 range), uses reference clips from `voice_samples/<voice_id>.wav`, post-processes pace via ffmpeg `atempo`. Model loaded once in `__init__` per the MLX pattern. Includes `install_clean_exit_hook()` — a workaround for a SIGBUS crash in `_sentencepiece.cpython-312-darwin.so` during Python shutdown; registers an atexit `os._exit(0)` to bypass the bad destructor path. Without it, macOS shows a "Python quit unexpectedly" dialog after every successful render.
 - `voice_samples/gatsby_ref.wav` + `voice_samples/daisy_ref.wav` — reference clips extracted from LibriVox Version 5 (Dramatic Reading) of *The Great Gatsby* Chapter 5: Tomas Peter as Gatsby at 1083.8–1091.7s (house description, 7.9s single-voice), Jasmin Salma as Daisy at 1343.5–1352.8s (shirts-scene tears, 9.3s single-voice). Timestamps located via `faster-whisper` word-level alignment against known script lines.
 - `voice_samples/SOURCES.md` — PD attribution, file provenance, extraction commands, and the alignment methodology for reproducibility.
-- `CastEntry` model in `pipeline/schema.py` — `{voice, backend}` per-character assignment. `CastModel.mapping` is now `dict[str, str | CastEntry]` with a `.resolve(character)` helper that applies the bare-string → default-backend shim.
+- `CastEntry` model in `pipeline/schema.py` — `{voice, backend}` per-character assignment. `CastModel.mapping` is now `dict[str, str | CastEntry]` with a `.resolve(character)` helper that applies the bare-string → default-backend shim for backward compatibility with existing P&P casts.
 - Per-speaker backend resolution in `pipeline/render.py`: `_get_backend_cached` lazy-loads each backend once; `render_chapter` dispatches per line based on `cast.resolve(speaker).backend`. A chapter with mixed engines pays each engine's load cost exactly once.
 - Hybrid cast for Gatsby: `cast_gatsby.json` updated — narrator stays on Kokoro (`am_michael`), Gatsby uses `gatsby_ref` on Chatterbox, Daisy uses `daisy_ref` on Chatterbox.
-- `.gitignore`: removed `cast.json` and `script.json` ignore rules — they're authored configuration and belong in history.
+- `BACKLOG.md` — deferred follow-ups with the reason each is deferred. Covers Sesame CSM (next-gen engine), Dia (inline emotion tags), LLM-driven casting, web UI, expanded reference library, and QA-threshold calibration.
+- `stories/salt-and-rust.md` + `build_salt_and_rust/script.json` + `cast_salt_and_rust.json` — *Salt and Rust*, original post-apocalyptic short story. Three-character cast: narrator (`bm_george`), Furiosa (`af_nicole`), Mariner (`am_echo`). Production notes supplied with full voice direction, pacing, and emotion annotations per line.
+- `build_salt_and_rust/config.yaml` — first use of per-story config override pattern. Sets `scene_pause_ms: 2000` per production direction; global `config.yaml` unchanged.
+- `pipeline/config.py` — new `load_config(build_dir)` utility. Deep-merges `<build_dir>/config.yaml` over global `config.yaml` when present. Enables per-story config without touching global defaults.
+- `pipeline/render.py` — scene-break handling: `render_chapter` detects `"---"` lines and injects `scene_pause_ms` silence instead of synthesizing — wires up the previously-defined-but-unused `scene_pause_ms` config key. `render_all` calls `load_config(build_dir)` so per-story overrides flow into pause/render logic.
+
+### Removed
+- `.gitignore` no longer ignores `cast*.json` (authored configuration, belongs in history). A stray `script.json` at the repo root stays ignored as a safety net via `/script.json`; build-dir script files (`build*/script.json`) are tracked by the allow-list.
 
 ### Changed
 - `README.md` rewritten as user-facing — audience is someone landing on the repo cold who wants to turn a story into an audiobook. New sections: one-paragraph what-is-this, Quickstart, Source formats, How it works, Casting, Swapping engines, **Modifying for your system** (Linux / NVIDIA CUDA / CPU-only / Windows — covers which parts are Mac-specific vs cross-platform), Troubleshooting, Project docs, License. AI-assistant instructions moved out — they live in `CLAUDE.md`; README now links.

@@ -21,7 +21,12 @@ samples/**
 voice_samples/**
 !voice_samples/.gitkeep
 !voice_samples/SOURCES.md
-# cast*.json and build*/script.json are authored configuration — tracked.
-# (Previously both were gitignored. They're small, per-project user choices
-# that belong in history.)
 
+# cast*.json is tracked authored configuration. A stray script.json at the
+# repo root (not inside build*/) stays ignored as a safety net — the
+# authored script files live at build*/script.json and have an explicit
+# !build*/script.json override implied by the allow-list above.
+/script.json
+
+# Story-specific opt-outs (see commit history for rationale per path).
+stories/salt-and-rust.md

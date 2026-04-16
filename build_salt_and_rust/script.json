@@ -1,0 +1,532 @@
+{
+  "title": "Salt and Rust",
+  "book_context": "An original post-apocalyptic literary short story. Furiosa (from Mad Max: Fury Road) has driven a tanker rig west past the last of the red desert and found an inland sea of salt flats. The rig is stuck — six tractors sunk hub-deep in wet salt, two days from the tide reclaiming the whole rig. A stranger emerges from the water: the Mariner (from Waterworld), tall, gill-slitted, salt-hardened, travelling alone since the Smokers took his boat. The story is four sections separated by scene breaks. Tone throughout: restraint, economy, dry desert light. Nobody performs. The violence is reported, not dramatized. The only moment of feeling is the Mariner's map speech. Final line is the emotional release: quiet, not triumphant.",
+  "characters": [
+    {
+      "name": "narrator",
+      "age_hint": "age-ambiguous",
+      "gender": "male",
+      "accent": "en-GB",
+      "personality": "weathered, dry, clinical, unhurried, literary — reads flat not wondrous. Trusts the material. Never underlines strangeness.",
+      "sample_lines": [
+        "Then the something stood up.",
+        "The salt fell away behind them and did not follow."
+      ]
+    },
+    {
+      "name": "Furiosa",
+      "age_hint": "late 30s",
+      "gender": "female",
+      "accent": "en-US",
+      "personality": "clipped, composed, dry, never warm, economical — falling intonation on questions that are statements. Words spent are words wasted.",
+      "sample_lines": [
+        "I noticed.",
+        "What do you want."
+      ]
+    },
+    {
+      "name": "Mariner",
+      "age_hint": "40s",
+      "gender": "male",
+      "accent": "en-US",
+      "personality": "grounded, plain, neutral, considered — slight beat before speaking, not theatrical, no affect. From nowhere now. Answers only what is asked.",
+      "sample_lines": [
+        "Your wheels are stuck.",
+        "I was a lot of things."
+      ]
+    }
+  ],
+  "chapters": [
+    {
+      "number": 1,
+      "title": "Salt and Rust",
+      "lines": [
+        {
+          "speaker": "narrator",
+          "text": "The tanker had been a tanker once. Now it was a island, and the island was on wheels, and the wheels were sunk to their hubs in wet salt.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Opening. Flat, unhurried. The repetition of 'island' is deliberate — do not rush it."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Furiosa walked the deck barefoot. The metal still held the night's cold. Below her, on the flats, the rig's six tractors lay tilted where the crust had given way, their tires drowned. Two days. Maybe three before the tide came back and took the rest.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Clinical inventory. 'Two days. Maybe three.' — each sentence its own beat."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She had not known the sea could do that. Come and go. The old maps in the Citadel had shown blue, but blue had meant nothing to her until she drove west past the last of the red and found water that breathed.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Read as reported fact, not wonder. 'Water that breathed' is the narrator's observation, not a gasp."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "A gull screamed. She watched it bank and drop toward something in the shallows.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Short setup. Full beat after 'shallows' before the next line."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Then the something stood up.",
+          "emotion": {"label": "neutral", "intensity": 0.4, "pace": -0.2, "notes": "HINGE LINE. Full beat before and after. Read flat — the strangeness is in the words, not the voice. Do not underline."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He came out of the water slow, the way a thing comes out that has been waiting. Tall. Long hair plastered. A harpoon across his back and a knife at his hip that had been cut from a propeller blade. He stopped a hundred meters out and looked at her rig the way a man looks at a fire he is deciding whether to sit by.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Each fragment lands. 'Tall. Long hair plastered.' — two-word sentences get their own breath."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She raised the sawn-off so he could see it. He raised one open hand. Then he came on.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "Spare. 'Then he came on.' — no follow-through energy."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Up close he smelled of brine and something else, sharper. He had gills. Three slits behind each ear, pale and closed now, fluttering when he breathed.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.1, "notes": "FLAT. The gills are reported like weather. Do not slow down for 'He had gills.' Do not make it strange — it is strange, the narrator does not need to say so."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Your wheels are stuck.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Observation, not opening gambit. He is telling her the weather."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "I noticed.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": 0.0, "notes": "Almost bored. He has just told her something she already knows."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Tide's coming.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Flat delivery."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He looked past her at the rig.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Inline tag — tight against surrounding dialogue."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Six hours. Maybe five.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Estimate, not alarm."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "I have men working.",
+          "emotion": {"label": "dry", "intensity": 0.25, "pace": -0.05, "notes": "Flat. She is not defending herself."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "You have three men working and one of them is dying.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Statement of fact. Not cruel, not kind."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He had not looked at the work crew. He had heard them. The wet cough from the man under the third axle.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Explanation beats. 'He had heard them.' — slight emphasis on 'heard', not dramatic."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Lung rot. He won't see morning.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.1, "notes": "Diagnosis delivered flat. No sympathy performed."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Furiosa did not lower the gun.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Brief narrator observation."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "What do you want.",
+          "emotion": {"label": "dry", "intensity": 0.25, "pace": -0.05, "notes": "Falling intonation. A door opening one inch. Not a question — a request for information."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Passage. East. Off the salt.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Three fragments. Each one a beat."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "Why.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.05, "notes": "Falling intonation. Statement expecting an answer. Not uncertainty."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He thought about it. That was the first thing she liked about him, that he thought about it instead of lying fast.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Beat before this line to represent the Mariner thinking. The narrator is making an observation, not editorializing warmly."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Smokers took my boat,",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Flat. Not aggrieved."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "he said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline dialogue tag — tight pause."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "I've been walking nine days. I can't drink this.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "He tips his head at the flats as he says this — delivery is casual explanation, not complaint."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He tipped his head at the flats.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline action tag."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "And I can drink most things.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Dry understatement. Not a joke, not a boast. Stated as fact."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "---",
+          "emotion": {"label": "neutral", "intensity": 0.0, "pace": 0.0, "notes": "Scene break — 2 second silence."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She put him to work. He did not complain about it and he did not thank her for it, which were the second and third things.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Short, efficient. The counting of 'things' she likes — clinical."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He knew water. That was the use of him. He went out across the crust on a plank he cut from the wheelhouse roof, distributing his weight, and he found them three soaks where the salt was thinnest and the freshwater pushed up from below. He filled their skins. He showed the boy Toast how to taste for the iron that meant a soak was about to fail.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Practical inventory of his competence. 'He knew water. That was the use of him.' — those two sentences are the core; don't rush them."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The dying man died at noon. They put him in the salt and the salt took him fast, the way it takes everything.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.1, "notes": "FLAT FACT. 'The dying man died at noon.' — no inflection whatsoever. It is a fact in a story full of facts. 'the way it takes everything' — slight slow, not elegiac, just the world."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "You knew,",
+          "emotion": {"label": "dry", "intensity": 0.25, "pace": -0.05, "notes": "Falling intonation. Not accusation — acknowledgment."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Furiosa said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline attribution."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "I know lungs.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.1, "notes": "Three words. Full stop. No follow-up energy. He is not defending himself."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "You a medic.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.05, "notes": "Falling intonation. Not a question — classifying."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "I was a lot of things.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.1, "notes": "IMPORTANT: must read as boring fact — not as a tease, not as a wound, not as a hook. He is declining to elaborate because elaborating would take effort. If it sounds intriguing, the performance has failed."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She watched him coil rope. His hands did it without him watching, the loops going down even and tight. Sailor's hands. She had seen hands like that exactly never, because where she came from no one had ever had cause to coil a rope around anything but a throat.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Observational. 'Sailor's hands.' — two words, own beat. The final clause ('around anything but a throat') is delivered flat — the violence implied, not dramatized."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "What do they call you,",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.05, "notes": "Falling intonation. Practical question."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "she said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline attribution."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He looked at the horizon a while.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Beat — the Mariner thinking. Slight pause before his answer."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Mariner,",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "Trying it on. Tiny beat between this and 'It'll do' — the name is being chosen in real time, do not telegraph it."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "he said, like he was trying it on.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline attribution with description."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "It'll do.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "The tell. He is choosing the name in real time. Small, not declarative."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "---",
+          "emotion": {"label": "neutral", "intensity": 0.0, "pace": 0.0, "notes": "Scene break — 2 second silence."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The Smokers came at dusk.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Section opener. Matter-of-fact."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She heard them before she saw them: the wrong sound, two-stroke engines tuned mean, coming in low across the flats on something that was not a car and not a boat. Skiffs. Skiffs with wheels welded under the hulls and sails up to catch the evening wind, skating across the crust at forty kilometers an hour because they weighed nothing and drew nothing and did not care that the salt would not hold a truck.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "Technical description — deliver as inventory, not drama. The velocity is in the words, not the reading."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Eight,",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Already moving as he says this."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "the Mariner said. He was already moving.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Tight after his number."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Maybe nine. The big one in front is Deacon's.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Flat, operational."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "Friends of yours.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.05, "notes": "Falling intonation. Dry. She is not asking."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "He's the one took my boat.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Flat. Explanation, not grievance."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Furiosa was up the ladder to the tanker's spine before he finished the sentence. She had the long rifle out of its oilcloth and the bipod down on the rail and the first round chambered by the time the lead skiff was inside two hundred meters.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "ACTION — do not accelerate. The clipped sentences create the speed. Reading faster makes them blur."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She missed the helmsman and hit the mast. The mast was wood and old and it came apart in a way wood is not supposed to, splintering down its length, and the sail collapsed across the deck and the skiff slewed and went over and the crust opened under it and ate it whole. Two men screamed going down. The salt closed.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "Reported, not dramatized. 'The salt closed.' — flat period. No linger."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Good shot,",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Mild. He is climbing up beside her."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "the Mariner said, climbing up beside her with the harpoon.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline attribution."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "I was aiming at the helmsman.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.05, "notes": "Flat. Not embarrassed, not wry. Reporting a fact."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Still good.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Two words. Not encouragement — assessment."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The other skiffs broke formation. They had not expected the rig to shoot back at that range. One peeled left, trying to get behind the tanker where her angle would die. The Mariner watched it come.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "Tactical narration. Even pace."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Can you hold the others.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Falling intonation. Operational question."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "For a minute.",
+          "emotion": {"label": "dry", "intensity": 0.25, "pace": -0.05, "notes": "Flat. Precise."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "A minute is enough.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "Quiet certainty. Not bravado."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He went over the rail. Not down the ladder. Over. He hit the salt twelve meters below in a runner's crouch and was up and sprinting before she registered he had jumped. The harpoon was off his back and in his hand. He ran straight at the flanking skiff, into its line, and the helmsman laughed and steered to run him down.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "ACTION — do not accelerate. 'Not down the ladder. Over.' — two-beat punch. Let it land."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The Mariner went under the bow.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Single sentence. Own beat."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Not around. Under. He dropped flat at the last second and the skiff passed over him and he came up behind it with one hand on the rudder post and the harpoon went up into the helmsman's back through the kidney and out through the sternum and the helmsman folded over the tiller and the skiff carved hard to starboard and into its own wake-line of broken crust. It went down stern-first. The Mariner was already swimming. Actually swimming, in six inches of brine over hardpan, the way a lizard swims across sand.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.05, "notes": "Violence delivered as engineering report. 'Not around. Under.' — two-beat. The long sentence about the harpoon is one breath — let the punctuation do the pacing. 'Actually swimming' — mild surprise registered in the words, not the voice."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Furiosa shot the mast out of the third skiff and the fourth turned and ran.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Efficient close to the action. 'and ran' — flat."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "By the time the sun was fully down there were four wrecks on the flats and the gulls had come and the Mariner was walking back to the rig with something in his hand. He climbed the ladder and dropped it on the deck at her feet.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Aftermath. Quieter. 'with something in his hand' — no reveal yet, don't telegraph."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "A compass. Brass. Old-world. The needle still swung.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.15, "notes": "Four short sentences. Each one a beat. 'The needle still swung.' — slight wonder in the words, flat in the voice."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Deacon's,",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "One word. Identifying."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "he said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline tag."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "He on that skiff.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.05, "notes": "Falling intonation. Checking."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "No. But he'll come for this.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Short answer, then assessment."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The Mariner wiped his harpoon on a rag.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Action tag — practical, not dramatic."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "So we should be elsewhere.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Flat recommendation. No urgency performed."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "---",
+          "emotion": {"label": "neutral", "intensity": 0.0, "pace": 0.0, "notes": "Scene break — 2 second silence."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "They got the rig out at moonrise. The Mariner had found, in his walking on the planks, a ridge of harder salt running northeast like a road laid down by something that had known there would one day be a road needed. They winched the tractors over to it one by one. It took four hours. The tide came in at the end and took the last tractor's rear wheels and they drove out of the rising water with the salt hissing against the hot exhaust.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.1, "notes": "Practical account of escape. Even pace throughout. 'the salt hissing against the hot exhaust' — allow the sound of it but don't perform it."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "On the high ground she stopped the rig and they looked back. The flats were a sheet of black water now under the moon. No sign of the wrecks. No sign there had ever been wrecks, or skiffs, or men.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.15, "notes": "Quieter. The erasure. 'No sign there had ever been wrecks, or skiffs, or men.' — slight slowness on the list."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Where east,",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.05, "notes": "Practical. Falling intonation."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "he said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline attribution."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "There's green country. Three weeks' drive. We're taking seed there.",
+          "emotion": {"label": "dry", "intensity": 0.25, "pace": -0.1, "notes": "Stated, not offered. Information about what is available, not persuasion."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Seed.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.1, "notes": "Single-word echo. Processing."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "To plant.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.05, "notes": "Flat clarification."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He was quiet a long time.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.15, "notes": "Beat. Actual pause before the Mariner's next speech."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "I had a map once,",
+          "emotion": {"label": "calm", "intensity": 0.5, "pace": -0.2, "notes": "THE ONLY MOMENT OF FEELING. Begin slowly. No catch in the throat — just a man saying the thing out loud, possibly for the first time in years."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "he said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.15, "notes": "Inline tag — quiet."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "Showed a place. Dry land all the way around, but green. I spent twenty years looking.",
+          "emotion": {"label": "calm", "intensity": 0.5, "pace": -0.2, "notes": "Continue the single moment of feeling. 'I spent twenty years looking.' — this is the investment. Slow it a fraction. Do not swell. Do not catch. If the actor wants one moment to invest in, this is it."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "Did you find it.",
+          "emotion": {"label": "dry", "intensity": 0.2, "pace": -0.1, "notes": "Falling intonation. She is not being tender — she is asking a direct question."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "I found a lot of places that weren't it.",
+          "emotion": {"label": "calm", "intensity": 0.4, "pace": -0.15, "notes": "Coming down from the map speech. Not quite neutral yet — the feeling is still in the room."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She thought about that.",
+          "emotion": {"label": "neutral", "intensity": 0.25, "pace": -0.15, "notes": "Brief beat."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "Ride with us,",
+          "emotion": {"label": "dry", "intensity": 0.25, "pace": -0.1, "notes": "Stated, not offered. She is giving him information about what is available, not persuading."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "she said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline attribution."}
+        },
+        {
+          "speaker": "Furiosa",
+          "text": "To the green country. Then decide.",
+          "emotion": {"label": "dry", "intensity": 0.25, "pace": -0.1, "notes": "Two short sentences. Each its own beat. Not warm. The door is open, not beckoning."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "He looked at the compass in his hand. The needle had settled. It was pointing the way they were already going, which meant nothing, or meant everything, depending on what kind of person you were about needles.",
+          "emotion": {"label": "neutral", "intensity": 0.3, "pace": -0.15, "notes": "The reader's choice. Deliver the last clause ('depending on what kind of person you were about needles') with slight deliberateness — the narrator is noting something, not editorializing."}
+        },
+        {
+          "speaker": "Mariner",
+          "text": "All right,",
+          "emotion": {"label": "calm", "intensity": 0.3, "pace": -0.15, "notes": "Quiet. A decision, not an agreement. No uplift."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "he said.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.05, "notes": "Inline attribution."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "She put the rig in gear.",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": -0.15, "notes": "Penultimate beat. Quietest delivery so far."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "---",
+          "emotion": {"label": "neutral", "intensity": 0.0, "pace": 0.0, "notes": "Final scene break — 2 second silence before last line."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "The salt fell away behind them and did not follow.",
+          "emotion": {"label": "calm", "intensity": 0.2, "pace": -0.3, "notes": "FINAL LINE — slowest line in the piece. Then silence. No uplift. No swell. Let the words carry it."}
+        }
+      ]
+    }
+  ]
+}

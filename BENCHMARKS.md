@@ -28,4 +28,5 @@ Automated rows are appended by `pipeline/bench.py`. Manual rows are fine for one
 | 993b61e | 2026-04-16 | mlx-kokoro | pp_final_reconciliation ch01 | 16 | 186 | 12.4 | 81.2 | 0.15 | 16/16 | 0.989 | MLX-Kokoro with model loaded once in __init__ (fix per-call reload) |
 | 993b61e | 2026-04-16 | mlx-kokoro | pp_hunsford_proposal ch01 | 13 | 177 | 13.7 | 71.6 | 0.19 | 12/13 | 0.992 | MLX-Kokoro on Hunsford scene |
 | 723c050 | 2026-04-16 | mlx-kokoro | gatsby_west_egg_reunion ch01 | 23 | 306 | 22.2 | 125.3 | 0.18 | 23/23 | 0.985 | New book (Gatsby), new cast (Nick/Gatsby/Daisy as am_michael/am_onyx/af_heart), script-format source with stage-direction parentheticals → emotion.notes; extended validator |
-| 8ec319e | 2026-04-16 | mlx-kokoro | gatsby_west_egg_reunion ch01 | 23 | 306 | 140.8 | 124.9 | 1.13 | 23/23 | 0.989 | HYBRID: narrator=Kokoro(am_michael), Gatsby+Daisy=Chatterbox with LibriVox Dramatic Reading refs |
+| 8ec319e | 2026-04-16 | mlx-kokoro | salt_and_rust ch01 | 97 | 1401 | 3.3 | 510.3 | 0.01 | 93/97 | 0.979 | initial render — af_aoede narrator, af_nicole Furiosa, am_michael Mariner; scene_pause_ms=2000 |
+| e47eb27 | 2026-04-16 | hybrid | gatsby_west_egg_reunion ch01 | 23 | 306 | 140.8 | 124.9 | 1.13 | 23/23 | 0.989 | HYBRID: narrator=Kokoro(am_michael), Gatsby+Daisy=Chatterbox w/ LibriVox Dramatic Reading refs |

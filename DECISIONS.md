@@ -197,9 +197,71 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 
 ---
 
-## 0012 · 2026-04-16 · Cast schema: `str | CastEntry` with backward-compat
+## 0012 · 2026-04-16 · Per-story config override via `<build_dir>/config.yaml`
 
-**Context.** Option D needs per-character backend assignment (Kokoro narrator + Chatterbox characters). The prior schema was `dict[str, str]`.
+**Context.** Production notes for *Salt and Rust* specified 2–3 second pauses at `---` section breaks. Global `config.yaml` had `scene_pause_ms: 1200` (1.2s). Mutating the global config file would silently affect all other stories rendered while the value is different.
+
+**Options considered.**
+- **Mutate global `config.yaml`**: simple, but affects all stories; easy to forget to revert.
+- **CLI flag `--story-config`**: explicit, but requires all pipeline scripts to accept and thread the argument.
+- **Auto-detect `<build_dir>/config.yaml` and deep-merge**: zero CLI change needed; each story carries its own exceptions; global config remains the authoritative default.
+
+**Decision.** Auto-detect and deep-merge. Added `pipeline/config.py::load_config(build_dir)`. `render_all` calls it after resolving `build_dir`, updates module-level `CFG`. Per-story config files are shallow — only keys that differ from global need to appear.
+
+**Consequences.**
+- Each story can tune pause timing, backend, sample rate independently.
+- The merge is deep (nested dicts merged, not replaced), so a story can override `output.scene_pause_ms` without repeating the entire `output` block.
+- Any pipeline script that doesn't call `load_config` won't see the per-story override — currently only `render.py` is updated; `cast.py` and `package.py` don't use timing config so this is fine.
+
+---
+
+## 0013 · 2026-04-16 · *Salt and Rust* narrator voice: `bm_george`
+
+**Context.** Production notes: "lower register, weathered, dry, age-ambiguous, unhurried. Reference: Holter Graham on McCarthy, Tom Hardy on Aesop's Fables." Two British male narrator-tagged voices available: `bm_george` (mature / authoritative / literary / narrator) and `bm_fable` (measured / narrator).
+
+**Options considered.**
+- **`bm_george`**: mature age class; "authoritative" and "literary" tags.
+- **`bm_fable`**: adult age class; "measured" tag — suggests calm, even delivery.
+
+**Decision.** `bm_george`. "Mature" age class better fits "age-ambiguous but has seen things." "Authoritative" is closer to the McCarthy-reader register than "measured" — measured implies calibration, authoritative implies weight.
+
+**Consequences.** If `bm_george` reads too heavy or sonorous for the flat clinical tone, `bm_fable` is the swap candidate.
+
+---
+
+## 0014 · 2026-04-16 · *Salt and Rust* Furiosa voice: `af_nicole`
+
+**Context.** Production notes: "female, low alto, late 30s–40s, clipped, never warm, dry. Australian inflection welcome but not required — if the actor can't land it cleanly, drop it." No Kokoro preset has an Australian accent.
+
+**Options considered.**
+- **`af_nicole`**: adult, tagged "cool / composed / dry."
+- **`af_river`**: adult, tagged "calm / steady."
+- Australian accent: not available in Kokoro; production notes explicitly provide a fallback ("neutral hard-consonant delivery works equally well").
+
+**Decision.** `af_nicole`. The "dry" tag is the decisive match — production notes use that exact word repeatedly. "Calm/steady" (`af_river`) implies a groundedness that edges toward warmth; Furiosa explicitly doesn't have warmth.
+
+**Consequences.** If `af_nicole` reads too cool/professional rather than clipped-wasteland, `af_river` is the swap. Australian accent remains unachievable in Kokoro; Chatterbox voice cloning could approximate it with a reference clip if ever prioritized.
+
+---
+
+## 0015 · 2026-04-16 · *Salt and Rust* Mariner voice: `am_echo`
+
+**Context.** Production notes: "no accent — he is from nowhere now. Not gruff, not mysterious on purpose. Plain, not opaque." Candidates: `am_echo` (neutral / clear), `am_eric` (grounded), `am_adam` (everyman).
+
+**Options considered.**
+- **`am_echo`**: neutral / clear — blank instrument.
+- **`am_eric`**: grounded — risk of earthy, character-voice affect.
+- **`am_adam`**: everyman — generic; potentially the most "actor-voice" of the three.
+
+**Decision.** `am_echo`. "Neutral/clear" is the closest tag approximation to "from nowhere, plain not opaque." The production note's strongest direction is negative: *not* mysterious, *not* gruff, *not* theatrical. `am_echo` is the most subtractive voice in the catalog.
+
+**Consequences.** If `am_echo` reads too thin or flat to differentiate from dead air, `am_eric` (grounded) is the next swap. The Mariner is the hardest voice to cast precisely because the direction is defined by what it must *not* be.
+
+---
+
+## 0016 · 2026-04-16 · Cast schema: `str | CastEntry` with backward-compat
+
+**Context.** Option D (Kokoro narrator + Chatterbox characters) needs per-character backend assignment. The prior schema was `dict[str, str]`.
 
 **Options considered.**
 - New shape, break legacy: `dict[str, CastEntry]`. Forces rewriting every existing cast.json. Simple code, breaks change.
@@ -214,7 +276,7 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 
 ---
 
-## 0013 · 2026-04-16 · LibriVox Dramatic Reading for reference clips
+## 0017 · 2026-04-16 · LibriVox Dramatic Reading for reference clips
 
 **Context.** Chatterbox needs 5–15s single-voice reference clips per character. Options for sourcing vary in cost and quality.
 
@@ -234,7 +296,7 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 
 ---
 
-## 0014 · 2026-04-16 · Hard-exit on Chatterbox shutdown to suppress macOS crash dialog
+## 0018 · 2026-04-16 · Hard-exit on Chatterbox shutdown to suppress macOS crash dialog
 
 **Context.** After loading Chatterbox, normal Python interpreter shutdown triggers SIGBUS inside `_sentencepiece.cpython-312-darwin.so` (KERN_PROTECTION_FAILURE). The work has already completed; this is a destructor-path bug in the native module under the torch 2.6 + numpy 1.26 stack Chatterbox forces. macOS surfaces it as a "Python quit unexpectedly" dialog. User flagged this as alarming.
 
@@ -253,7 +315,7 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 
 ---
 
-## 0015 · 2026-04-16 · Chatterbox pace via ffmpeg post-processing
+## 0019 · 2026-04-16 · Chatterbox pace via ffmpeg post-processing
 
 **Context.** Chatterbox has `exaggeration`, `cfg_weight`, `temperature`, but no native speed/pace parameter. The Emotion dataclass's `pace` field has no direct target.
 

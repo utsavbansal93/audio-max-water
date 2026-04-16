@@ -226,20 +226,79 @@ The fix was three lines: load once in `MLXKokoroBackend.__init__`, pass the inst
 
 ---
 
-## 2026-04-16 · Day 1 (iteration 9) — hybrid Chatterbox ships on branch
+## 2026-04-16 · *Salt and Rust* — first original-fiction production
 
-**Where this happened.** All of iteration 9 is on the `claude/hybrid-chatterbox` branch (worktree at `.claude/worktrees/hybrid-chatterbox`). `main` continues evolving in parallel — a separate Claude Code session is building out *Salt and Rust* there with scene-break support and per-story config overrides. Both branches diverge, both advance, both will reconcile at merge time. The worktree design paid off on its first real use.
+**What this was.** The first story in this project that is not a canonical literary text — original fan-fiction crossover placing Furiosa (Mad Max: Fury Road) and the Mariner (Waterworld) in the same post-apocalyptic salt-flat scene. User wrote the story and supplied detailed production notes with voice direction at the character and line level.
 
-**What shipped on this branch.**
+**What was different about this production vs. prior stories.**
+
+*Previous stories* (P&P, Gatsby) were canonical texts: LLM-parsed prose, emotion inferred from context, character voices calibrated against established performances in the reader's mental model.
+
+*This production* had the opposite information profile: the author was the same person as the director. Production notes arrived before a single line was rendered. Every character has a written voice brief; specific lines are flagged for specific delivery choices; what to avoid is stated as explicitly as what to do. This is the audiobook equivalent of working from a shooting script with the director in the room.
+
+**How explicit notes changed the emotion annotation strategy.**
+
+For Gatsby, emotion was inferred from the Fitzgerald text plus book context. For Salt and Rust, production notes pre-resolved most inference questions: Furiosa's questions have falling intonation because the notes say "falling intonation" directly. The Mariner's map speech is the only emotional moment because the notes say "the only moment of something like feeling in the entire piece." This compressed annotation time dramatically but also made errors more traceable — if a line sounds wrong, there is a written note to compare against.
+
+**Pipeline gap discovered: `scene_pause_ms` was defined but never consumed.**
+
+While planning the render, I found that `config.yaml` had a `scene_pause_ms: 1200` key but `render_chapter` in `pipeline/render.py` never read it. Scene breaks in script.json had no handling — the `---` line would have been passed to Kokoro as literal text and synthesized (or errored). Added `---` detection to `render_chapter` and wired the config key. Assistant chose this. See DECISIONS.md #0012.
+
+**Per-story config pattern introduced here.**
+
+Production notes called for 2–3s pauses at section breaks. Rather than mutate global `config.yaml`, introduced `pipeline/config.py::load_config(build_dir)` — auto-detects and deep-merges `<build_dir>/config.yaml` over global defaults. Each story carries its own exceptions. User approved this approach during planning.
+
+**Casting decisions.**
+
+- Narrator → `bm_george`: user production notes reference Holter Graham on McCarthy; British male, mature, authoritative tags. Assistant chose `bm_george` over `bm_fable` on the "authoritative vs. measured" distinction.
+- Furiosa → `af_nicole`: notes say "dry" repeatedly; `af_nicole` is the only Kokoro voice tagged "dry." No Australian accent in Kokoro; notes explicitly provided a fallback ("neutral hard-consonant delivery works equally well").
+- Mariner → `am_echo`: the direction is mostly negative — not mysterious, not gruff, not theatrical. `am_echo` (neutral/clear) is the most subtractive voice available.
+
+All three casting decisions are documented in DECISIONS.md #0013–0015.
+
+**What to listen for in the first render.**
+
+1. The gills paragraph: "He had gills. Three slits behind each ear, pale and closed now, fluttering when he breathed." — narrator must not slow down or lower voice. If it sounds like something is being highlighted, it's too much.
+2. "Then the something stood up." — the hinge. Should land as a flat observation, not a reveal.
+3. "I was a lot of things." — Mariner, after "You a medic." If it sounds like a tease or a hook, the performance is too big. It should sound like someone declining to elaborate because elaborating would take effort.
+4. The map speech: "I had a map once. Showed a place. Dry land all the way around, but green. I spent twenty years looking." — one allowed moment of feeling. No catch. Just saying the thing out loud.
+5. Final line: "The salt fell away behind them and did not follow." — slowest line. Then silence.
+
+---
+
+## 2026-04-16 · *Salt and Rust* — post-render retrospective
+
+**User verdict: 3.5/5 stars for narration.** Self-described strict score — stated ceiling is higher, not a ceiling on the material.
+
+**What worked.** The restraint-heavy literary register was a reasonable fit for Kokoro's non-autoregressive architecture. A story where *the flat affect is the point* plays to Kokoro's natural tendency rather than fighting it. `af_aoede` as narrator landed well (user noted "lovely"). `af_nicole` for Furiosa worked — the "whispery" quality aligned with the dry, economical direction.
+
+**What didn't.** Two limitations surfaced:
+
+1. *Mariner voice options weren't always great.* `am_michael` was the strongest available candidate but "authoritative / warm" tags pulled in a direction that doesn't quite match "from nowhere, plain not opaque." The audition set (am_michael, am_fenrir, am_onyx, am_echo) didn't contain a voice that naturally inhabits salt-air roughness without movie-tough affect. This is a Kokoro catalog gap, not a casting mistake — the direction called for something the preset library doesn't have cleanly.
+
+2. *Emotional range limited.* Kokoro's non-autoregressive architecture gives the emotion fields in script.json no real input surface. The map speech ("I had a map once...") — the only scripted moment of feeling — likely read flatter than the production notes intended. This is the same ceiling documented in DECISIONS.md #0011.
+
+**Structural observation worth keeping.** The fit between story tone and engine capability is a production decision that should be made earlier. This story worked *despite* Kokoro's emotional flatness because flatness was directionally correct. A story with a demanding emotional arc (grief, fear, joy) would expose the same limitation as a flaw rather than a feature. The right question before casting is: *does this story's emotional register require expressiveness, or does restraint serve it?* If the former, plan for Chatterbox from the start.
+
+**For the Mariner voice specifically.** If this story gets a re-render under a hybrid engine setup (DECISIONS.md #0011), the Mariner is the character most likely to benefit from a Chatterbox voice clone with a reference clip — the direction is specific enough ("salt-air rough, not movie-tough") that a cloned voice from a reference performance would outperform any preset catalog.
+
+---
+
+## 2026-04-16 · Day 1 (iteration 9) — hybrid Chatterbox ships on branch, then merged
+
+**Where this happened.** Iteration 9 was built on the `claude/hybrid-chatterbox` branch via a worktree at `.claude/worktrees/hybrid-chatterbox`. While I worked here, a separate Claude Code session on `main` built *Salt and Rust* (above) — scene-break support, per-story config overrides, package.py metadata fixes. Both branches diverged, both advanced, both reconciled at merge time without any collision on files they each owned. The worktree design paid off on its first real use.
+
+**What shipped on this branch (then merged into main).**
 
 - `tts/chatterbox_backend.py`. The Chatterbox TTS engine finally behind our `TTSBackend` ABC. `Emotion.intensity` maps to `exaggeration` ∈ [0.30, 0.95], giving our emotion field its first concrete mechanical effect. `Emotion.pace` post-processes via ffmpeg `atempo` — Chatterbox has no native speed knob. Voice id = filename stem in `voice_samples/`.
 - Cast schema extended: `{character: {voice, backend}}` is now a valid value, with a backward-compat shim that reads bare strings as "voice id at the cast's default backend." `cast.resolve(speaker)` is the single access point.
 - Per-speaker backend resolution in `pipeline/render.py`. A chapter can mix engines; each engine loads exactly once via `_get_backend_cached`. Same pattern from DECISIONS #0009 (MLX) reused at the dispatch layer.
 - LibriVox Dramatic Reading v5 of *The Great Gatsby* mined for reference clips. Used `faster-whisper` word-level timestamps to align our known script lines against the 29-min chapter 5 audio, then hand-picked single-voice passages: Tomas Peter's Gatsby at minute 18 describing his house; Jasmin Salma's Daisy at minute 22 crying over the shirts. Both clips are 8–10 s, both PD, attribution in `voice_samples/SOURCES.md`.
 - `cast_gatsby.json` updated: narrator = `am_michael` (Kokoro), Gatsby = `gatsby_ref` (Chatterbox), Daisy = `daisy_ref` (Chatterbox).
-- First hybrid render of the West Egg reunion scene. RTF 1.13 (Chatterbox's diffusion sampling is ~10× heavier per line than Kokoro's non-AR path — but only 10 of the 23 lines hit Chatterbox). QA 23/23. Whisper 0.989. Output at `out/The_Reunion_at_West_Egg.m4b`.
+- First hybrid render of the West Egg reunion scene. RTF 1.13 (Chatterbox's diffusion sampling is ~10× heavier per line than Kokoro's non-AR path — but only 10 of the 23 lines hit Chatterbox). QA 23/23. Whisper 0.989. **User verdict: "works fine."**
+- `BACKLOG.md` created — deferred-follow-ups file with the reason each is deferred. Sesame CSM is the first entry.
 
-**The one macOS-specific landmine.** After a Chatterbox render, Python interpreter shutdown tripped SIGBUS inside `_sentencepiece.cpython-312-darwin.so` — destructor bug in the native tokenizer against the torch 2.6 + numpy 1.26 stack Chatterbox forces. The work completed; the process exit crashed. macOS showed the user a "Python quit unexpectedly" dialog. User flagged it mid-iteration: *"Getting 'python quit unexpectedly errors on the mac, is everything ok?"* Diagnosed in about 90 seconds via crash-log inspection. Workaround: `install_clean_exit_hook()` in Chatterbox's `__init__` registers an atexit `os._exit(0)` that bypasses the broken destructor path. Hard-exit is a blunt tool, but the work is already done; nothing legitimate runs in atexit for this pipeline. Documented in DECISIONS #0014 as periodically-recheckable (the hook becomes dead code if sentencepiece ships a fix).
+**The one macOS-specific landmine.** After a Chatterbox render, Python interpreter shutdown tripped SIGBUS inside `_sentencepiece.cpython-312-darwin.so` — destructor bug in the native tokenizer against the torch 2.6 + numpy 1.26 stack Chatterbox forces. The work completed; the process exit crashed. macOS showed the user a "Python quit unexpectedly" dialog. User flagged it mid-iteration: *"Getting 'python quit unexpectedly errors on the mac, is everything ok?"* Diagnosed in about 90 seconds via crash-log inspection. Workaround: `install_clean_exit_hook()` in Chatterbox's `__init__` registers an atexit `os._exit(0)` that bypasses the broken destructor path. Hard-exit is a blunt tool, but the work is already done; nothing legitimate runs in atexit for this pipeline. Documented in DECISIONS #0018 as periodically-recheckable (the hook becomes dead code if sentencepiece ships a fix).
 
 **The casting tree is now information-dense.** For a character we need to cast:
 - If the character is a narrator or fits Kokoro's existing voice library well, Kokoro works and costs nothing.
@@ -248,8 +307,11 @@ The fix was three lines: load once in `MLXKokoroBackend.__init__`, pass the inst
 
 The hybrid cast schema makes this a per-character decision, not a per-book decision.
 
+**Merge back to main.** After user approval ("works fine"), `claude/hybrid-chatterbox` merged into `main` with conflicts in `.gitignore`, `pipeline/render.py`, `CHANGELOG.md`, `DECISIONS.md`, and `STORY.md` — all reconciled. Notably the two render.py changes compose cleanly: scene-break handling (from main) runs first in the per-line loop, then per-speaker backend resolution (from this branch) dispatches the remaining lines. My DECISIONS entries renumbered to #0016–0019 to sit after main's #0012–0015.
+
 **Concept bucket (added).**
-- *Worktree-based parallel evolution.* When a branch will take hours and main has other work in flight, the worktree is worth its setup cost every time. `main` and `claude/hybrid-chatterbox` both evolved today without touching each other's files. Merge complexity is deferred, not eliminated; but the cost is paid once at merge time instead of continuously during development.
+- *Worktree-based parallel evolution.* When a branch will take hours and main has other work in flight, the worktree is worth its setup cost every time. `main` and `claude/hybrid-chatterbox` both evolved today without touching each other's files. Merge complexity is deferred, not eliminated; but the cost is paid once at merge time instead of continuously during development — and the merge turned out to be additive-on-additive, which is the cheapest kind.
 - *Reference audio as a casting currency.* With voice-cloning engines, casting decisions become *where can I source 10 seconds of someone who sounds like this character acting this way*. LibriVox's Dramatic Reading subcategory turns out to be a goldmine for PD fiction: cast-voiced books where each actor already has sustained dialogue in the role. Future audiobook work should assume this resource exists for canon works.
 - *The crash-dialog fix as user-care.* A technically-fine render that crashes on exit is *not* a shipping-quality deliverable if the user sees a system alert. "It works" includes "it exits cleanly." Diagnosing and fixing takes minutes; ignoring would have left the product feeling broken. Worth the hook.
 - *Destructor-time bugs are almost always an ABI story.* The ABI mismatch between sentencepiece's compiled extension and the rest of the stack is the real cause; `os._exit` is a symptom fix. When this comes up elsewhere, the permanent fix is at the dep-resolution layer, not the application layer.
+- *Compose merges, don't pick sides.* Two branches each modified the same function in `render.py` (scene-break from main, backend dispatch from this branch). Neither was "wrong"; they addressed different concerns at different points in the loop. The clean move was to order them so the earlier exit (scene-break) runs first, then the dispatch runs on the remaining lines. Both intents preserved.

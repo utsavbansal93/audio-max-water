@@ -32,3 +32,23 @@ The `text` field in `script.json` is **byte-verbatim** from the source story. Op
 - ffmpeg: `/opt/homebrew/bin/ffmpeg`
 - Working backend models live under `~/.cache/` (Hugging Face, torch hub) — do not commit.
 - `build/`, `out/`, `voice_samples/` (except `.gitkeep`), `samples/`, and `.venv/` are gitignored.
+
+## Memory discipline (M-series 16 GB budget)
+
+This project runs primarily on an M3 MacBook Air with 16 GB unified memory. Neural TTS backends have real memory costs that add up fast; on a machine where the working model set exceeds physical RAM, macOS swaps to SSD and the system crawls.
+
+Approximate loaded-in-memory costs (April 2026):
+- MLX Kokoro-82M-bf16: ~300 MB
+- torch Kokoro-82M: ~500 MB
+- Chatterbox-Turbo (0.5 B): ~1.5 GB + diffusion tensor buffers (~1 GB peak during sampling)
+- faster-whisper base.en int8: ~200 MB
+
+Rules:
+
+1. **Never run more than one render process at a time.** A hybrid render already co-loads Kokoro + Chatterbox + Whisper. A second concurrent process doubles the footprint and trips swap.
+2. **Do not background long-running Python processes without a reason.** `run_in_background: true` for a Chatterbox render leaves 2+ GB resident for the duration — easy to forget while starting new work.
+3. **Kill Python processes between sessions.** `pgrep -f python3.12` before opening a new Claude Code session. Orphan processes from previous iterations accumulate.
+4. **When memory is tight, split bench into render + qa.** The default `pipeline.bench` pipeline does render → QA with everything still loaded. Running `pipeline.render` and `pipeline.qa` as separate processes lets each release its models on exit.
+5. **Chatterbox is the expensive one.** Kokoro-only renders have no memory concern on 16 GB. Chatterbox-heavy stories (many character lines) are where budget matters.
+
+If the system memory starts swapping during a render, stop — let the swapper settle, split the work into smaller processes, resume. Don't power through.

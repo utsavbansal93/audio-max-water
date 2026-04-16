@@ -1,0 +1,2 @@
+output:
+  scene_pause_ms: 2000   # production notes: "2–3 second pauses at section breaks"
