@@ -124,15 +124,47 @@ def _render(template: str, request: Request, **ctx) -> HTMLResponse:
     return templates.TemplateResponse(request, template, ctx)
 
 
+EPUB_MIMETYPE = "application/epub+zip"
+# .zip is accepted tentatively — post-save we sniff the `mimetype` member
+# and promote to .epub if it's an EPUB container; otherwise we reject.
+ALLOWED_EXTENSIONS = {".txt", ".md", ".docx", ".epub", ".pdf", ".zip"}
+USER_FACING_EXTENSIONS = {".txt", ".md", ".docx", ".epub", ".pdf"}
+
+
+def _looks_like_epub_zip(path: Path) -> bool:
+    """Return True iff `path` is a valid ZIP whose first entry is a
+    `mimetype` member with contents `application/epub+zip`.
+
+    Matches the EPUB 3.3 OCF spec: the container MUST be a ZIP and MUST
+    start with an uncompressed `mimetype` entry. We're forgiving about
+    position (some tools put it second), but strict about the contents.
+    """
+    import zipfile
+    try:
+        with zipfile.ZipFile(path) as zf:
+            try:
+                data = zf.read("mimetype")
+            except KeyError:
+                return False
+            return data.strip() == EPUB_MIMETYPE.encode("ascii")
+    except (zipfile.BadZipFile, OSError):
+        return False
+
+
 def _save_upload(file: UploadFile) -> Path:
-    """Save an UploadFile to UPLOAD_DIR, return the path. Validates
-    extension; raises HTTPException on unsupported format."""
-    allowed = {".txt", ".md", ".docx", ".epub", ".pdf"}
+    """Save an UploadFile to UPLOAD_DIR, return the path.
+
+    Browser drag-drop of an unzipped EPUB directory arrives as a `.zip`.
+    We accept `.zip` provisionally, then sniff the ZIP — if it's a valid
+    EPUB container we rename to `.epub` so the existing extension-based
+    ingest dispatch picks up EpubIngestor. Non-EPUB zips are rejected.
+    """
     ext = Path(file.filename or "").suffix.lower()
-    if ext not in allowed:
+    if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported format {ext!r}. Supported: {sorted(allowed)}",
+            detail=f"Unsupported format {ext!r}. "
+                   f"Supported: {sorted(USER_FACING_EXTENSIONS)}",
         )
     safe = Path(file.filename or "upload").name
     # Prefix with timestamp so repeated uploads of "book.epub" don't collide.
@@ -140,6 +172,26 @@ def _save_upload(file: UploadFile) -> Path:
     dst = UPLOAD_DIR / f"{stamp}_{safe}"
     with dst.open("wb") as f:
         shutil.copyfileobj(file.file, f)
+
+    # .zip needs sniffing: accept if EPUB, reject otherwise.
+    if ext == ".zip":
+        if _looks_like_epub_zip(dst):
+            epub_dst = dst.with_suffix(".epub")
+            dst.rename(epub_dst)
+            log.info("upload: promoted %s → %s (sniffed as EPUB)",
+                     dst.name, epub_dst.name)
+            return epub_dst
+        dst.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "That .zip doesn't look like an EPUB — expected a "
+                f"'mimetype' entry with contents '{EPUB_MIMETYPE}'. "
+                "If this is an unzipped EPUB folder, re-zip it with "
+                "the mimetype file first and an uncompressed mimetype entry, "
+                "or drag the original .epub file instead."
+            ),
+        )
     return dst
 
 

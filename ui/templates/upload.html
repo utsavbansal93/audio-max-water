@@ -9,6 +9,8 @@
   </div>
   {% endif %}
 
+  <div id="upload-error" class="banner banner--error" role="alert" hidden></div>
+
   <form id="upload-form" action="/api/upload" method="post" enctype="multipart/form-data" class="drop-zone">
     <label for="file-input" class="drop-zone-label" id="drop-target">
       <svg aria-hidden="true" viewBox="0 0 48 48" class="drop-icon">
@@ -20,7 +22,7 @@
       <h1>Drop a book</h1>
       <p class="caption">Text, Markdown, Word, PDF, or EPUB</p>
       <input id="file-input" type="file" name="file"
-             accept=".txt,.md,.docx,.epub,.pdf"
+             accept=".txt,.md,.docx,.epub,.pdf,.zip,application/epub+zip"
              required hidden />
       <button type="button" id="browse-btn" class="btn-ghost">Choose file</button>
     </label>

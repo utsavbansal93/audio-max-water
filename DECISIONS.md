@@ -535,3 +535,37 @@ Combining them in one process means either (a) running the MCP server over an HT
 - SSE from the UI is simple: one endpoint (`/events/<job_id>`), one queue per job, heartbeats keep long-lived connections alive. No WebSocket complexity.
 - The callback is invoked from the worker thread; callers that do DOM work (the browser) only see JSON events serialized by the SSE handler — there's no thread-safety concern on the browser side.
 - Terminal events carry an optional `extra.redirect` URL so the client navigates automatically at stage completion — the UI never polls `/api/job/<id>`.
+
+---
+
+## 0030 · 2026-04-16 · Sniff `.zip` uploads server-side; accept directory-form EPUBs
+
+**Context.** User tried to upload a file they thought was an EPUB. On disk it was actually an **unzipped directory** at `stories/Hyperthief.epub/` with a valid OCF layout (`mimetype` file + `META-INF/` + `OEBPS/`). Browsers transport a dragged directory as a single `.zip` file. The UI rejected the resulting upload with a 400 saying "Unsupported format '.zip'", which the browser then rendered as raw JSON on a blank `/api/upload` page because the form submission was a native POST — no client-side handler to surface the error inline.
+
+Two distinct problems, one user experience:
+1. The file content IS a valid EPUB; we were rejecting it because of its extension.
+2. Even a legitimate rejection (e.g. a non-EPUB .zip) would land the user on a dead-end JSON page, not a helpful inline message.
+
+**Options considered — accepting the upload.**
+- **Trust the browser's MIME type header** (`application/epub+zip`). Unreliable: Chrome and Firefox disagree on what MIME a directory-form upload carries; many tools give `application/zip` or `application/octet-stream`. Can't rely on it.
+- **Ask the user to re-export / re-zip manually.** Real option but hostile UX — the user reasonably assumes a folder with `.epub` in its name is an EPUB.
+- **Accept `.zip` and sniff after save.** Read the ZIP's `mimetype` entry (EPUB 3.3 OCF requires it). If it says `application/epub+zip`, rename to `.epub` and proceed through the normal extension-based dispatcher. If not, reject with a specific "your .zip doesn't look like an EPUB" error explaining what was expected.
+
+**Options considered — the dead-end JSON page.**
+- **Server-side redirect on error** (302 → `/?error=...`). Puts the error in URL state, which the home page would have to read and render. Ugly URLs; browser back-button weirdness.
+- **Return a full HTML page with the error** for every 400. Duplicates server-rendering; fights the JSON API pattern the rest of the app uses.
+- **Intercept the form submit in JS, render errors inline.** Form now POSTs via `fetch()`; success follows the 303 redirect; failure parses `{detail: "..."}` from JSON and shows it in an `#upload-error` banner. Consistent with how other endpoints already return JSON.
+
+**Decision.** Both fixes, in one commit:
+1. `ui/app.py::_save_upload` accepts `.zip` and calls `_looks_like_epub_zip()` (stdlib `zipfile` — no new deps). Valid EPUB zips get renamed to `.epub`; bad ones are unlinked and return a 400 with a specific error message.
+2. `pipeline/ingest/epub_ingestor.py` handles directory-form EPUBs by re-zipping to a tempfile (mimetype STORED first, spec-compliant) before handing to `ebooklib`. Same code path works for both UI uploads and CLI `--in` args.
+3. `ui/static/app.js::initUpload` intercepts `<input type="file">` change events, submits via fetch, renders inline errors in `#upload-error`.
+
+**Consequences.**
+- A user dragging an unzipped-EPUB folder into the browser gets a working upload. So does anyone with a folder-form `.epub` on disk using the CLI.
+- A random `.zip` (screenshots, code archive, anything not-EPUB) gets rejected server-side with a message explaining the expected `mimetype` contents.
+- Upload errors never again result in a blank page showing raw JSON — they render as a red banner above the drop zone, the file input stays live, the user can immediately retry.
+- Client-side extension gate gives instant feedback for obviously-wrong types (`.html`, `.mp3`) without a round-trip.
+- Two subtle things: the ZIP sniff is forgiving about mimetype-entry position (EPUB 3.3 says it SHOULD be first STORED, but some tools compress it or reorder). Our `_zip_epub_dir()` on the write-side IS strict — matches the spec for what we produce. And the directory ingestor emits a `warnings.warn()` so the user sees "re-zipped to temp EPUB" in the log, not a silent internal transformation.
+
+**Retrospective lesson.** *When a user calls you wrong, check both bugs at once.* The report was "I uploaded an EPUB and got rejected." The first bug (directory → zip rejection) was real. The second bug (error renders as raw JSON page) is what turned a recoverable 400 into a user-facing failure. Either bug alone is survivable; both together produce a "this product is broken" feeling. The instinct to fix only the reported one would have left the JSON-page-on-error surface waiting to bite on the next legitimate 400.

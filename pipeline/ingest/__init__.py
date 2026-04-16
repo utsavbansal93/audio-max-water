@@ -14,6 +14,13 @@ from .base import Ingestor, RawChapter, RawStory
 
 
 def get_ingestor(path: Path) -> Ingestor:
+    # A path can be a directory-form EPUB (has `.epub` suffix and is a
+    # folder containing `mimetype` + `META-INF/container.xml`). Route
+    # those to EpubIngestor too — it handles the zip-on-the-fly step.
+    if path.is_dir() and path.suffix.lower() == ".epub":
+        from .epub_ingestor import EpubIngestor
+        return EpubIngestor()
+
     ext = path.suffix.lower()
     if ext in (".txt",):
         from .text_ingestor import TextIngestor

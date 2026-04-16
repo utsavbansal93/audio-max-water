@@ -47,8 +47,10 @@ def _normalize(s: str) -> str:
     s = re.sub(r"(?m)^\s*#{2,6}\s+.*$", "", s)
     # H1 heading prefix: strip `# ` but keep the text (book title is spoken)
     s = re.sub(r"(?m)^\s*#\s+", "", s)
-    # Italic by-line (`*by Author*`)
-    s = re.sub(r"(?m)^\s*\*by\s+[^*]+\*\s*$", "", s)
+    # Italic by-line (`*by Author*`) — match both as its own line in the
+    # source AND inline in the reconstructed text (the LLM often keeps the
+    # byline as narrator prose, which then concatenates with the next line).
+    s = re.sub(r"\*by\s+[^*]+\*", "", s)
     s = re.sub(r"(?m)^\s*[\*\-_]{3,}\s*$", "", s)
     s = _SPEAKER_LABEL_RE.sub("", s)
     s = _STAGE_DIRECTION_RE.sub(" ", s)

@@ -22,7 +22,9 @@ requirement: start from the first piece of real content.
 from __future__ import annotations
 
 import re
+import tempfile
 import warnings
+import zipfile
 from pathlib import Path
 
 from .base import (
@@ -32,6 +34,56 @@ from .base import (
     clean_text,
     guess_title_from_path,
 )
+
+
+EPUB_MIMETYPE = "application/epub+zip"
+
+
+def _looks_like_unzipped_epub(path: Path) -> bool:
+    """True iff `path` is a directory containing the EPUB layout: a
+    `mimetype` file with `application/epub+zip` contents and a
+    `META-INF/container.xml`.
+
+    The classic symptom of this is a user who did `unzip foo.epub -d Foo.epub/`,
+    or a macOS bundle that got treated as a folder in some file operation.
+    """
+    if not path.is_dir():
+        return False
+    mimetype_file = path / "mimetype"
+    container = path / "META-INF" / "container.xml"
+    if not mimetype_file.is_file() or not container.is_file():
+        return False
+    try:
+        return mimetype_file.read_text(encoding="ascii").strip() == EPUB_MIMETYPE
+    except (UnicodeDecodeError, OSError):
+        return False
+
+
+def _zip_epub_dir(src_dir: Path, out: Path) -> None:
+    """Re-zip a directory-form EPUB into a spec-compliant OCF container.
+
+    Per EPUB 3.3 §3.3, the `mimetype` entry MUST be the FIRST entry in
+    the ZIP and MUST be stored uncompressed with no extra fields. We
+    honor both constraints so ebooklib (and any other EPUB reader)
+    accepts the result.
+    """
+    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # 1. mimetype first, STORED, no extra field.
+        mimetype_file = src_dir / "mimetype"
+        zf.writestr(
+            zipfile.ZipInfo("mimetype"),
+            mimetype_file.read_bytes() if mimetype_file.exists()
+            else EPUB_MIMETYPE.encode("ascii"),
+            compress_type=zipfile.ZIP_STORED,
+        )
+        # 2. Everything else, deflated.
+        for p in sorted(src_dir.rglob("*")):
+            if p.name == "mimetype" and p.parent == src_dir:
+                continue
+            if p.is_dir():
+                continue
+            rel = p.relative_to(src_dir).as_posix()
+            zf.write(p, rel)
 
 
 # EPUB3 `epub:type` values classified as front-matter we should skip.
@@ -126,6 +178,30 @@ class EpubIngestor(Ingestor):
     extensions = (".epub",)
 
     def ingest(self, path: Path) -> RawStory:
+        # If `path` is a directory-form EPUB (common when an .epub has
+        # been unzipped with its original extension kept), zip it to a
+        # temp file and proceed. This also supports the CLI case
+        # `python -m pipeline.run --in stories/Hyperthief.epub/`.
+        _tempzip: Path | None = None
+        if path.is_dir():
+            if not _looks_like_unzipped_epub(path):
+                raise ValueError(
+                    f"{path} is a directory but doesn't look like an "
+                    "unzipped EPUB (missing mimetype or META-INF/container.xml)"
+                )
+            tmpf = tempfile.NamedTemporaryFile(
+                suffix=".epub", delete=False, prefix="epub_from_dir_"
+            )
+            tmpf.close()
+            _tempzip = Path(tmpf.name)
+            _zip_epub_dir(path, _tempzip)
+            warnings.warn(
+                f"epub ingest: {path.name} was a directory; "
+                f"re-zipped to temp EPUB ({_tempzip.stat().st_size:,} bytes)",
+                stacklevel=2,
+            )
+            path = _tempzip
+
         try:
             from ebooklib import epub, ITEM_DOCUMENT  # type: ignore[import-not-found]
         except ImportError as e:

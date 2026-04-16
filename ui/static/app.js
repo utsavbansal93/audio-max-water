@@ -10,6 +10,17 @@
 
   // --- upload page: drag & drop + file picker ------------------------------
 
+  // Extensions the server accepts. .zip is accepted IFF it contains an
+  // EPUB mimetype entry; we let the server sniff and surface its rejection
+  // via the inline banner.
+  const UPLOAD_OK_EXTS = new Set([".txt", ".md", ".docx", ".epub", ".pdf", ".zip"]);
+  const UPLOAD_USER_FACING = [".txt", ".md", ".docx", ".epub", ".pdf"];
+
+  function fileExt(name) {
+    const i = name.lastIndexOf(".");
+    return i === -1 ? "" : name.substring(i).toLowerCase();
+  }
+
   function initUpload() {
     const form = document.getElementById("upload-form");
     if (!form) return;
@@ -17,15 +28,93 @@
     const fileInput = document.getElementById("file-input");
     const browseBtn = document.getElementById("browse-btn");
     const status = document.getElementById("upload-status");
+    const errorEl = document.getElementById("upload-error");
 
-    browseBtn?.addEventListener("click", () => fileInput.click());
+    function clearError() {
+      if (errorEl) {
+        errorEl.hidden = true;
+        errorEl.textContent = "";
+      }
+    }
+    function showError(msg) {
+      if (errorEl) {
+        errorEl.hidden = false;
+        errorEl.textContent = msg;
+      }
+      // Re-enable the picker so the user can try a different file without
+      // reloading the page.
+      fileInput.disabled = false;
+      status.hidden = true;
+    }
 
-    fileInput?.addEventListener("change", () => {
-      if (!fileInput.files.length) return;
-      status.hidden = false;
-      status.textContent = `Uploading ${fileInput.files[0].name}…`;
-      form.submit();
+    browseBtn?.addEventListener("click", () => {
+      clearError();
+      fileInput.click();
     });
+
+    async function handleUpload() {
+      if (!fileInput.files.length) return;
+      const f = fileInput.files[0];
+      const ext = fileExt(f.name);
+
+      // Client-side extension gate. Keeps the round-trip for genuinely
+      // valid-looking files; everything else fails fast with a useful
+      // message instead of hitting the server.
+      if (!UPLOAD_OK_EXTS.has(ext)) {
+        showError(
+          `Unsupported format "${ext}". Try one of: ${UPLOAD_USER_FACING.join(", ")}.`
+        );
+        fileInput.value = "";
+        return;
+      }
+
+      clearError();
+      fileInput.disabled = true;
+      status.hidden = false;
+      status.textContent = `Uploading ${f.name}…`;
+
+      const fd = new FormData();
+      fd.append("file", f);
+
+      let resp;
+      try {
+        resp = await fetch(form.action, {
+          method: "POST",
+          body: fd,
+          redirect: "follow",
+          // Hint to the server that we'll handle failures inline.
+          headers: { Accept: "application/json, text/html" },
+        });
+      } catch (e) {
+        showError(`Upload failed: ${e}`);
+        return;
+      }
+
+      if (resp.ok || resp.redirected) {
+        // FastAPI returned a 303 → browser followed it to /parsing/<id>.
+        // resp.url is the final URL after redirect.
+        window.location.href = resp.url;
+        return;
+      }
+
+      // Non-OK: try to parse a {detail: "..."} JSON response. If the
+      // server returned HTML (e.g. 500 page), show the status text.
+      let detail = `Upload rejected (HTTP ${resp.status})`;
+      const ctype = resp.headers.get("content-type") || "";
+      try {
+        if (ctype.includes("application/json")) {
+          const body = await resp.json();
+          detail = body.detail || JSON.stringify(body);
+        } else {
+          const text = await resp.text();
+          if (text) detail = text.slice(0, 500);
+        }
+      } catch (_) { /* fallthrough */ }
+      showError(detail);
+      fileInput.value = "";
+    }
+
+    fileInput?.addEventListener("change", handleUpload);
 
     ["dragover", "dragenter"].forEach((ev) =>
       dropTarget?.addEventListener(ev, (e) => {
@@ -42,8 +131,11 @@
       e.preventDefault();
       if (!e.dataTransfer?.files?.length) return;
       fileInput.files = e.dataTransfer.files;
-      fileInput.dispatchEvent(new Event("change"));
+      handleUpload();
     });
+
+    // Prevent accidental native submit (e.g. pressing Enter).
+    form.addEventListener("submit", (e) => e.preventDefault());
   }
 
   // --- progress subscription (SSE) -----------------------------------------

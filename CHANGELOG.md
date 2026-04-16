@@ -4,6 +4,17 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Fixed — upload handling for directory-form EPUBs + inline error rendering
+
+- `ui/app.py::_save_upload` now accepts `.zip` uploads and sniffs the container: if it's a valid EPUB (has an uncompressed `mimetype` entry reading `application/epub+zip`), promote to `.epub` and proceed; otherwise reject with a clear 400 explaining what the zip was missing. Motivated by the common case of a `.epub` on disk that's actually an unzipped directory — browsers auto-zip it on drag-drop and the server was rejecting the resulting `.zip` with an unhelpful error page.
+- `pipeline/ingest/epub_ingestor.py::EpubIngestor.ingest` detects directory-form EPUBs (path is a directory containing `mimetype` + `META-INF/container.xml`) and zips them to a temp file before handing to `ebooklib` — matches EPUB 3.3 OCF layout (mimetype STORED first, everything else deflated). Same fix covers the CLI case: `python -m pipeline.run --in foo.epub/` now works when `foo.epub` is a folder.
+- `pipeline/ingest/__init__.py::get_ingestor` routes directory paths with `.epub` suffix to `EpubIngestor`.
+- `ui/static/app.js::initUpload` now submits via `fetch()` instead of native form POST. On failure the server's `{"detail": "..."}` JSON renders inline in a new `#upload-error` banner on the upload page; on success the browser navigates to the redirected `/parsing/<job>` URL. No more dead-end blank pages showing raw JSON.
+- Client-side extension gate rejects obviously-unsupported files without a round-trip; `.zip` is let through for server-side sniffing.
+- `ui/templates/upload.html` gains the `#upload-error` banner placeholder and widens the `<input>` `accept` attribute to `.zip,application/epub+zip` so the OS file picker offers directory-form EPUB zips.
+- `ui/static/style.css` adds `.banner--error` modifier (uses the existing `--danger` token) with a subtle spring shake on first show.
+- `pipeline/validate.py::_normalize` — the `*by Author*` byline stripper now matches inline (not just as its own line). Parse-step LLM responses often concatenate the byline into the opening narrator line; without this fix, the validator saw a byline in the reconstructed text but not in the normalized source and complained. Regression surfaced when parsing Hyperthief (an EPUB with a `*by Brandon Sanderson*` byline directly under the title).
+
 ### Added — Phase 2.1 job persistence + stage tracker + resume + history + EPUB front-matter filter
 
 - `ui/services/job_store.py` — disk-backed job persistence. `PersistedJob` dataclass carries everything we record about a job (status, paths, per-stage state with timestamps + progress counters). `JobStore` writes each job to `build/_jobs/<job_id>.json` atomically (write-temp-then-rename). Jobs survive server restarts.

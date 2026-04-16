@@ -195,6 +195,19 @@ main {
   margin-bottom: 48px;
   font-size: 14px;
 }
+.banner--error {
+  background: rgba(255, 59, 48, 0.10);
+  color: var(--danger);
+  border: 1px solid rgba(255, 59, 48, 0.25);
+  white-space: pre-wrap;
+  text-align: left;
+  animation: banner-shake 280ms var(--ease-spring);
+}
+@keyframes banner-shake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-4px); }
+  75%      { transform: translateX(4px); }
+}
 
 .drop-zone {
   margin: 64px 0;
