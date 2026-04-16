@@ -22,3 +22,4 @@ voice_samples/**
 !voice_samples/SOURCES.md
 cast.json
 /script.json
+stories/salt-and-rust.md
