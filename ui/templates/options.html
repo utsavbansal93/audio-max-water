@@ -59,9 +59,26 @@
     {% endif %}
 
     <details class="advanced">
-      <summary class="caption">Voice engine</summary>
+      <summary class="caption">Voice engines</summary>
       <fieldset class="card">
         <label class="field">
+          <span>Narrator</span>
+          <select name="narrator_backend">
+            {% for b in backends %}
+              <option value="{{ b }}" {% if job.narrator_backend == b %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span>Other characters</span>
+          <select name="character_backend">
+            {% for b in backends %}
+              <option value="{{ b }}" {% if job.character_backend == b %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span>Fallback <span class="caption muted">(when narrator = characters)</span></span>
           <select name="backend">
             {% for b in backends %}
               <option value="{{ b }}" {% if job.backend == b %}selected{% endif %}>{{ b }}</option>

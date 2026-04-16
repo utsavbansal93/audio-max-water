@@ -30,14 +30,22 @@ SETTINGS_PATH = CONFIG_DIR / "settings.toml"
 @dataclass
 class Settings:
     # LLM provider choice + credentials
-    provider: Provider = "anthropic"
+    provider: Provider = "mcp"
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
     anthropic_model: str = ""   # empty string = provider default
     gemini_model: str = ""
 
-    # Render defaults
+    # Render defaults.
+    # `backend` is the fallback / single-engine knob retained for simple
+    # setups and backward compatibility. Two new fields split it for the
+    # common hybrid use case:
+    #   - narrator_backend: the engine used for the `narrator` speaker.
+    #   - character_backend: the engine used for every named character.
+    # Either can be "" (empty) to mean "fall back to `backend`".
     backend: str = "mlx-kokoro"
+    narrator_backend: str = "mlx-kokoro"
+    character_backend: str = "chatterbox"
     output_format: Literal["m4b", "epub3"] = "m4b"
 
     # UI
@@ -77,6 +85,8 @@ class Settings:
             "gemini_api_key": redact(self.gemini_api_key),
             "anthropic_model": self.anthropic_model,
             "gemini_model": self.gemini_model,
+            "narrator_backend": self.narrator_backend,
+            "character_backend": self.character_backend,
             "backend": self.backend,
             "output_format": self.output_format,
             "theme": self.theme,
@@ -133,6 +143,8 @@ def save_settings(settings: Settings, path: Path = SETTINGS_PATH) -> None:
     lines.append("")
     lines.append("[output]")
     lines.append(f"backend = {toml_str(d['backend'])}")
+    lines.append(f"narrator_backend = {toml_str(d['narrator_backend'])}")
+    lines.append(f"character_backend = {toml_str(d['character_backend'])}")
     lines.append(f"output_format = {toml_str(d['output_format'])}")
     lines.append("")
     lines.append("[ui]")

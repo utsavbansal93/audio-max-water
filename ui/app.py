@@ -375,11 +375,32 @@ def _start_parse(job: Job, provider: str, model: str | None,
                 cb(ProgressEvent(stage="cast", phase="start", message="proposing voices"))
                 from pipeline.cast import propose, write_cast
                 from ui.services.backend_pool import get_backend as _get_pool_backend
-                pool_backend = _get_pool_backend(job.backend)
-                cast, proposals = propose(
-                    job.script_path, build_dir / "cast_samples", job.backend,
-                    backend=pool_backend,
-                )
+
+                nb_name = job.persist.narrator_backend or job.backend
+                cb_name = job.persist.character_backend or job.backend
+                hybrid = nb_name != cb_name
+
+                if hybrid:
+                    cb(ProgressEvent(
+                        stage="cast", phase="progress",
+                        message=f"loading {nb_name} (narrator) + {cb_name} (characters)",
+                    ))
+                    nb_obj = _get_pool_backend(nb_name)
+                    cb_obj = _get_pool_backend(cb_name)
+                    cast, proposals = propose(
+                        job.script_path, build_dir / "cast_samples",
+                        nb_name,  # informational default
+                        narrator_backend=nb_name,
+                        character_backend=cb_name,
+                        narrator_backend_obj=nb_obj,
+                        character_backend_obj=cb_obj,
+                    )
+                else:
+                    pool_backend = _get_pool_backend(job.backend)
+                    cast, proposals = propose(
+                        job.script_path, build_dir / "cast_samples", job.backend,
+                        backend=pool_backend,
+                    )
                 write_cast(cast, cast_path)
                 job.cast = cast
                 job.cast_path = cast_path
@@ -440,9 +461,17 @@ def _start_render(job: Job) -> None:
             cb(ProgressEvent(stage="render", phase="start", message="loading voice engine"))
             from pipeline.render import render_all
             from ui.services.backend_pool import get_backend as _pool
-            # Seed render_all with the UI's shared backend so we don't
-            # load MLX / Chatterbox twice per process.
-            seeded = {job.backend: _pool(job.backend)}
+            # Seed render_all with the UI's shared backends so we don't
+            # load MLX / Chatterbox twice per process. In hybrid mode
+            # (narrator on one engine, characters on another) we preload
+            # both.
+            nb_name = job.persist.narrator_backend or job.backend
+            cb_name = job.persist.character_backend or job.backend
+            seeded = {
+                job.backend: _pool(job.backend),
+                nb_name: _pool(nb_name),
+                cb_name: _pool(cb_name),
+            }
             chapter_mp3s = render_all(
                 script_path=job.script_path,
                 cast_path=job.cast_path,
@@ -588,12 +617,14 @@ def page_done(request: Request, job_id: str):
 
 @app.post("/api/settings")
 def api_save_settings(
-    provider: str = Form("anthropic"),
+    provider: str = Form("mcp"),
     anthropic_api_key: str = Form(""),
     gemini_api_key: str = Form(""),
     anthropic_model: str = Form(""),
     gemini_model: str = Form(""),
     backend: str = Form("mlx-kokoro"),
+    narrator_backend: str = Form("mlx-kokoro"),
+    character_backend: str = Form("chatterbox"),
     output_format: str = Form("m4b"),
     theme: str = Form("system"),
 ):
@@ -612,6 +643,8 @@ def api_save_settings(
         anthropic_model=anthropic_model,
         gemini_model=gemini_model,
         backend=backend,
+        narrator_backend=narrator_backend,
+        character_backend=character_backend,
         output_format=output_format,  # type: ignore[arg-type]
         theme=theme,  # type: ignore[arg-type]
     )
@@ -635,6 +668,8 @@ async def api_upload(request: Request, file: UploadFile = File(...)):
     job.persist.input_filename = Path(file.filename).name
     job.persist.provider = settings.provider
     job.persist.backend = settings.backend
+    job.persist.narrator_backend = settings.narrator_backend or settings.backend
+    job.persist.character_backend = settings.character_backend or settings.backend
     job.persist.output_format = settings.output_format
     job.persist.status = "parsing"
     job.save()
@@ -707,6 +742,8 @@ async def api_options(
     job_id: str,
     output_format: str = Form("m4b"),
     backend: str = Form("mlx-kokoro"),
+    narrator_backend: str = Form(""),
+    character_backend: str = Form(""),
     cover: Optional[UploadFile] = File(None),
 ):
     job = session_mgr.get(job_id)
@@ -716,6 +753,10 @@ async def api_options(
         raise HTTPException(400, f"bad output_format {output_format!r}")
     job.persist.output_format = output_format
     job.persist.backend = backend
+    if narrator_backend:
+        job.persist.narrator_backend = narrator_backend
+    if character_backend:
+        job.persist.character_backend = character_backend
     if cover is not None and cover.filename:
         cover_path = _cover_path_from_upload(job, cover)
         if cover_path:

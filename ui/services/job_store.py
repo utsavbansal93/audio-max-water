@@ -86,6 +86,8 @@ class PersistedJob:
 
     output_format: str = "m4b"
     backend: str = "mlx-kokoro"
+    narrator_backend: str = ""      # "" = fall back to `backend`
+    character_backend: str = ""     # "" = fall back to `backend`
     provider: str = "anthropic"
     cover_path: Optional[str] = None
 
@@ -108,6 +110,8 @@ class PersistedJob:
             "n_lines": self.n_lines,
             "output_format": self.output_format,
             "backend": self.backend,
+            "narrator_backend": self.narrator_backend,
+            "character_backend": self.character_backend,
             "provider": self.provider,
             "cover_path": self.cover_path,
             "output_path": self.output_path,
@@ -149,6 +153,8 @@ class PersistedJob:
             "n_lines": self.n_lines,
             "output_format": self.output_format,
             "backend": self.backend,
+            "narrator_backend": self.narrator_backend or self.backend,
+            "character_backend": self.character_backend or self.backend,
             "provider": self.provider,
             "cover_filename": Path(self.cover_path).name if self.cover_path else None,
             "output_path": self.output_path,

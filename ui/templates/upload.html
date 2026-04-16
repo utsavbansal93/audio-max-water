@@ -33,7 +33,15 @@
     <span class="caption muted">Using</span>
     <strong>{{ settings.provider }}</strong>
     <span class="caption muted">·</span>
-    <strong>{{ settings.backend }}</strong>
+    {% if settings.narrator_backend == settings.character_backend %}
+      <strong>{{ settings.narrator_backend }}</strong>
+    {% else %}
+      <strong>{{ settings.narrator_backend }}</strong>
+      <span class="caption muted">(narrator)</span>
+      <span class="caption muted">·</span>
+      <strong>{{ settings.character_backend }}</strong>
+      <span class="caption muted">(characters)</span>
+    {% endif %}
     <span class="caption muted">·</span>
     <strong>{% if settings.output_format == 'm4b' %}Audiobook{% else %}Ebook with synced audio{% endif %}</strong>
     <a href="/settings" class="caption">change</a>

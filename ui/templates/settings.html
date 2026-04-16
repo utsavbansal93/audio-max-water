@@ -84,13 +84,34 @@
     <fieldset class="card">
       <legend>Defaults</legend>
       <label class="field">
-        <span>Voice engine</span>
-        <select name="backend">
-          <option value="mlx-kokoro" {% if settings.backend == "mlx-kokoro" %}selected{% endif %}>MLX Kokoro · Apple Silicon, fast, restrained</option>
-          <option value="kokoro" {% if settings.backend == "kokoro" %}selected{% endif %}>Kokoro (torch) · portable</option>
-          <option value="chatterbox" {% if settings.backend == "chatterbox" %}selected{% endif %}>Chatterbox · expressive, voice cloning, slow</option>
+        <span>Narrator voice engine</span>
+        <select name="narrator_backend">
+          <option value="mlx-kokoro" {% if settings.narrator_backend == "mlx-kokoro" %}selected{% endif %}>MLX Kokoro · fast, restrained (Apple Silicon)</option>
+          <option value="kokoro" {% if settings.narrator_backend == "kokoro" %}selected{% endif %}>Kokoro (torch) · portable, restrained</option>
+          <option value="chatterbox" {% if settings.narrator_backend == "chatterbox" %}selected{% endif %}>Chatterbox · expressive, voice cloning, slow</option>
         </select>
+        <span class="caption muted">Used for the "narrator" speaker. Fast + restrained is usually right.</span>
       </label>
+      <label class="field">
+        <span>Character voice engine</span>
+        <select name="character_backend">
+          <option value="chatterbox" {% if settings.character_backend == "chatterbox" %}selected{% endif %}>Chatterbox · expressive, voice cloning, slow</option>
+          <option value="mlx-kokoro" {% if settings.character_backend == "mlx-kokoro" %}selected{% endif %}>MLX Kokoro · fast, restrained (Apple Silicon)</option>
+          <option value="kokoro" {% if settings.character_backend == "kokoro" %}selected{% endif %}>Kokoro (torch) · portable, restrained</option>
+        </select>
+        <span class="caption muted">Used for every named character. Expressive = emotion slider, voice cloning.</span>
+      </label>
+      <details class="advanced">
+        <summary class="caption">Fallback engine (single-engine mode)</summary>
+        <label class="field">
+          <select name="backend">
+            <option value="mlx-kokoro" {% if settings.backend == "mlx-kokoro" %}selected{% endif %}>mlx-kokoro</option>
+            <option value="kokoro" {% if settings.backend == "kokoro" %}selected{% endif %}>kokoro</option>
+            <option value="chatterbox" {% if settings.backend == "chatterbox" %}selected{% endif %}>chatterbox</option>
+          </select>
+          <span class="caption muted">Used when narrator and character backends are the same, or as a fallback. Rarely needs changing.</span>
+        </label>
+      </details>
       <label class="field">
         <span>Output</span>
         <div class="segmented" role="radiogroup">

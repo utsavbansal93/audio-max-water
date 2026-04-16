@@ -4,6 +4,21 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Added — split voice engines (narrator vs characters) + MCP default provider
+
+- `ui/services/settings.py::Settings` gets `narrator_backend` and `character_backend` fields (defaults `mlx-kokoro` and `chatterbox` respectively). The original `backend` field is kept as a single-engine fallback, rarely touched. Default provider changed from `anthropic` to `mcp` — most users who install this have a Claude client connected.
+- `ui/services/job_store.py::PersistedJob` gets the same two fields so every job records which engine rendered which role. Empty string = "fall back to `backend`" for backward-compat with old job files.
+- `pipeline/cast.py::propose` gains a hybrid mode. When `narrator_backend` and `character_backend` are both supplied and differ, the `narrator` speaker is cast from the narrator backend's voice list and every other character from the character backend's — producing a `CastModel` where each entry is a `CastEntry(voice=..., backend=...)` so the existing per-line render dispatcher routes correctly. Single-engine mode unchanged; old cast.json files still load.
+- Optional `narrator_backend_obj` / `character_backend_obj` kwargs let the UI pass pre-loaded backend instances from its shared pool so MLX / Chatterbox aren't loaded twice per process (same pattern as the existing single-backend kwarg).
+- `ui/app.py::_start_parse` chooses hybrid vs single-engine propose based on whether `job.narrator_backend != job.character_backend`; `_start_render` preloads both engines into the render seed dict.
+- `/api/settings` and `/api/options/<id>` accept `narrator_backend` + `character_backend` form fields.
+
+### UI
+
+- Settings page: two dropdowns — "Narrator voice engine" (restrained is right by default for narrators) + "Character voice engine" (expressive/voice-cloning is right by default for characters). Original single-engine knob moved into an "Advanced — fallback engine" disclosure.
+- Options page: same split, with a "Fallback (when narrator = characters)" disclosure for the single-engine case.
+- Home page quick-settings chip: when the two engines differ, shows both with `(narrator)` / `(characters)` labels. Collapses to one label when they're the same.
+
 ### Fixed — accept wrapped-in-folder EPUB uploads (macOS Finder / browser drag-drop)
 
 - `ui/app.py::_looks_like_epub_zip` now returns `(is_epub, prefix)` and detects two layouts: (A) spec-compliant root-level `mimetype` entry; (B) all entries wrapped in a single top-level folder, with `<folder>/mimetype` matching `application/epub+zip`. Layout B is what macOS Finder's Compress and browser drag-drop-of-a-directory produce.

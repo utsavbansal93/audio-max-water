@@ -6,9 +6,21 @@ Ideas, experiments, and follow-ups that are worth doing but not now. Each entry 
 
 ## TTS backends
 
+**Engine taxonomy (so the entries below land in context).** All TTS engines we use or might use are *neural*; the meaningful axis is **non-autoregressive vs autoregressive LLM-based**. Non-autoregressive engines (Kokoro / MLX-Kokoro, StyleTTS2-style, 82 M params) accept text + speed only — there is no emotion input, and emotional shading is a side-effect of punctuation and pace. Autoregressive LLM-based engines (Chatterbox uses a Llama-0.5 B backbone) predict audio tokens conditioned on a reference clip and an exaggeration / prompt slider, which is what makes "true surprised", "vulnerable", "weighty" delivery possible at all. Sesame and Dia (below) are both autoregressive LLM-based.
+
+**What each backlog engine would substitute.** Both replace **Chatterbox** in the hybrid stack — same role, same `TTSBackend` ABC slot. Neither replaces **LibriVox**: LibriVox is the public-domain audiobook source we *extract reference clips from*, not an engine. Reference clips would still come from LibriVox (or another PD audiobook source) regardless of which autoregressive engine consumes them. Per-character backend assignment is already supported via `cast.json::backend`, so a swap can be wholesale or surgical (one character, one line).
+
+**The non-verbal-sound capability ladder** (sighs, sobs, gasps, audible laughs):
+- *Kokoro* — none. Reads `(sigh)` as the word "sigh".
+- *Chatterbox* — partial: word delivery can be made breathy / intense / vulnerable via the `exaggeration` slider plus an emotionally matched reference clip. But it cannot produce a discrete audible sigh / sob / gasp as a sound event.
+- *Sesame CSM* — Chatterbox's strengths plus richer tonal micro-cues (breath catches between phrases, vulnerability between words). Still not designed for explicit "(sighs)" tags.
+- *Dia* — the only one of the four that produces **discrete non-verbal vocalizations on demand** via inline `(sighs)` / `(laughs)` / `(gasps)` text tags.
+
 ### Sesame CSM (1 B, Llama-backbone)
 
-**What.** Drop-in alternative to Chatterbox under the existing `TTSBackend` ABC. Per 2026 benchmarks, the strongest open-source engine for multi-speaker conversational speech and non-verbal cues (sighs, breath catches, tonal subtleties). Reference: https://huggingface.co/sesame/csm-1b.
+**What.** Autoregressive LLM-based drop-in alternative to Chatterbox under the existing `TTSBackend` ABC. Per 2026 benchmarks, the strongest open-source engine for multi-speaker conversational speech and non-verbal cues (sighs, breath catches, tonal subtleties). Reference: https://huggingface.co/sesame/csm-1b. Same workflow as Chatterbox — reference clips in `voice_samples/`, emotion via prompt + intensity rather than inline text tags.
+
+**What it gets us beyond Chatterbox.** Chatterbox colors *word delivery* via `exaggeration` + a sympathetic reference clip but cannot produce a discrete audible sigh / sob / gasp on demand. Sesame's training corpus is multi-speaker conversational, so its non-verbal *tonal* cues (breath catches between phrases, vulnerability between words, multi-speaker turn-taking realism) are richer than Chatterbox's single-speaker autoregressive output. It is still NOT the right choice for explicit "(sighs)" tags — see Dia below for that case.
 
 **Why deferred.** Hybrid Chatterbox + LibriVox references landed well (user: "works fine") on the Gatsby reunion scene. Next-engine work is speculative until we hit a Chatterbox ceiling we can actually name. Sesame is ~3× larger than Chatterbox (1 B vs 350 M params), wants more RAM, and its setup path is less battle-tested on M3.
 
@@ -20,11 +32,13 @@ Ideas, experiments, and follow-ups that are worth doing but not now. Each entry 
 
 ## Dia (Nari Labs) — inline emotion tags
 
-**What.** A TTS engine that accepts inline tags like `(sighs)`, `(whispers)`, `(laughs)`, `(gasps)` directly in the input text. Could map naturally to our `emotion.notes` field: if a note contains a bracketed directive, pass it through to Dia literally.
+**What.** An autoregressive transformer TTS engine that accepts inline tags like `(sighs)`, `(whispers)`, `(laughs)`, `(gasps)` directly in the input text. Maps naturally to our `emotion.notes` field: if a note contains a bracketed directive, pass it through to Dia literally. Like Sesame, slots into Chatterbox's role under the `TTSBackend` ABC (or coexists on a per-line basis via `cast.json::backend`); LibriVox reference clips are still the audio source.
 
-**Why deferred.** Chatterbox+LibriVox already gets us emotional range. Dia's value is mostly for *stylized* emotional moments (a character gasps mid-sentence) that our current pipeline can't express except through line splitting.
+**What it gets us beyond Chatterbox / Sesame.** The only engine on the backlog that produces *discrete non-verbal vocalizations on demand* — an actual audible sigh sound between two spoken lines, not just a sigh-flavored delivery of words. Chatterbox and Sesame can make *word delivery* breathy, intense, or vulnerable; only Dia can insert the sigh itself as a sound event. The cost is workflow: the directive lives in the input text rather than in a side-channel parameter, so cache-key generation needs a small extension and the faithful-wording validator must learn to ignore `(...)` directives in the rendered text path while keeping `script.json::text` byte-verbatim.
 
-**When to revisit.** When we hit a scene where the *style* of emotion matters more than the *intensity* — a character breaking down mid-line, an audible laugh, whispered asides. Austen doesn't need this; modern fiction might.
+**Why deferred.** Chatterbox+LibriVox already gets us emotional range on word delivery. Dia's value is mostly for *stylized* emotional moments (a character gasps mid-sentence) that our current pipeline can't express except through line splitting.
+
+**When to revisit.** When we hit a scene where the *style* of emotion matters more than the *intensity* — a character breaking down mid-line, an audible laugh, whispered asides. Austen doesn't need this; modern fiction (or any source where stage directions like "she gasped" appear inline) might.
 
 ---
 
@@ -84,6 +98,12 @@ Landed as `ui/` + `pipeline/serve.py` + `pipeline/mcp_server.py`. See DECISIONS 
 - Implement `llm/mcp_sampling_provider.py::complete()` using the server's active `RequestContext.session.create_message(...)`.
 - Document Claude Desktop / Claude Code config for HTTP MCP transport.
 - Handle the "no client connected" case — UI should fall back to API key automatically if a client disconnects mid-parse.
+
+### Per-character engine override in the UI (beyond narrator vs characters)
+
+**What.** The split-voice-engine feature lets the user pick one engine for the narrator and another for all other characters. Beyond this: let the user override engine for a specific character via the voice picker sheet. E.g. narrator = kokoro, most characters = chatterbox, but this one dry-tone narrator-within-a-narrator character gets forced back to kokoro-bm_fable.
+
+**Why deferred.** The existing cast-entry schema (`{voice, backend}`) already supports this; only the UI and the `propose()` function don't let the user reach it. Adds visual complexity to the voice picker sheet. Worth building once there's a real case where the two-bucket split isn't enough.
 
 ### Minor-character voice defaults
 

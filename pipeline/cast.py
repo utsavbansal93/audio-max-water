@@ -106,30 +106,78 @@ def propose(
     backend_name: str,
     *,
     backend: TTSBackend | None = None,
+    narrator_backend: str | None = None,
+    character_backend: str | None = None,
+    narrator_backend_obj: TTSBackend | None = None,
+    character_backend_obj: TTSBackend | None = None,
 ) -> tuple[CastModel, dict[str, list[Voice]]]:
-    """Propose a cast for the script. Optionally accepts a pre-built
-    backend so the UI's shared backend-pool can be reused — avoids
-    loading MLX / Chatterbox twice in one process."""
+    """Propose a cast for the script.
+
+    Single-engine path (backward-compatible): pass only `backend_name`
+    (optionally `backend` as a pre-loaded instance). Every character
+    gets assigned from that one engine's voice list.
+
+    Hybrid path: pass `narrator_backend` AND `character_backend`. The
+    `narrator` speaker is cast from narrator_backend's voice list; every
+    other character is cast from character_backend's. The returned
+    CastModel uses the expanded `{voice, backend}` CastEntry form for
+    each entry so the render path dispatches correctly.
+
+    `narrator_backend_obj` / `character_backend_obj` let the UI pass
+    pre-loaded backend instances from its shared pool; if omitted we
+    load them on demand.
+    """
+    from pipeline.schema import CastEntry  # local import to dodge cycles
+
     script = ScriptModel.model_validate(json.loads(script_path.read_text()))
-    if backend is None:
-        backend = get_backend(backend_name)
-    voices = backend.list_voices()
-
-    proposals: dict[str, list[Voice]] = {}
-    mapping: dict[str, str] = {}
-
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    hybrid = bool(narrator_backend and character_backend
+                  and narrator_backend != character_backend)
+
+    if not hybrid:
+        # Single-engine path — original logic.
+        if backend is None:
+            backend = get_backend(backend_name)
+        voices = backend.list_voices()
+        proposals: dict[str, list[Voice]] = {}
+        mapping: dict[str, str | CastEntry] = {}
+        for ch in script.characters:
+            top = _propose_for_character(ch, voices)
+            proposals[ch.name] = top
+            mapping[ch.name] = top[0].id
+            sample_text = _sample_text_for(ch)
+            for rank, v in enumerate(top, start=1):
+                out_wav = out_dir / ch.name / f"{rank}_{v.id}.wav"
+                _render_sample(backend, sample_text, v.id, out_wav)
+        cast = CastModel(backend=backend_name, mapping=mapping)
+        return cast, proposals
+
+    # Hybrid path: distinct engines for narrator vs characters.
+    nb = narrator_backend_obj or get_backend(narrator_backend)
+    cb = character_backend_obj or get_backend(character_backend)
+    narrator_voices = nb.list_voices()
+    character_voices = cb.list_voices()
+
+    proposals = {}
+    mapping = {}
     for ch in script.characters:
+        is_narrator = (ch.name == "narrator")
+        eng = narrator_backend if is_narrator else character_backend
+        voices = narrator_voices if is_narrator else character_voices
+        backend_obj = nb if is_narrator else cb
         top = _propose_for_character(ch, voices)
         proposals[ch.name] = top
-        mapping[ch.name] = top[0].id
-        # Render an audition per proposed voice.
+        mapping[ch.name] = CastEntry(voice=top[0].id, backend=eng)
         sample_text = _sample_text_for(ch)
         for rank, v in enumerate(top, start=1):
             out_wav = out_dir / ch.name / f"{rank}_{v.id}.wav"
-            _render_sample(backend, sample_text, v.id, out_wav)
+            _render_sample(backend_obj, sample_text, v.id, out_wav)
 
-    cast = CastModel(backend=backend_name, mapping=mapping)
+    # The `CastModel.backend` default is used only for bare-string entries;
+    # since we wrote CastEntry for every mapping, it's informational. Store
+    # the narrator_backend as the default (matches the "headline" engine).
+    cast = CastModel(backend=narrator_backend, mapping=mapping)
     return cast, proposals
 
 
