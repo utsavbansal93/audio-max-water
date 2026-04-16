@@ -19,7 +19,9 @@ from .base import (
     Ingestor,
     RawChapter,
     RawStory,
+    clean_metadata_author,
     clean_text,
+    extract_author_from_text,
     guess_title_from_path,
 )
 
@@ -45,7 +47,11 @@ class PdfIngestor(Ingestor):
         with pdfplumber.open(str(path)) as pdf:
             meta = pdf.metadata or {}
             title = (meta.get("Title") or "").strip() or guess_title_from_path(path)
-            author = (meta.get("Author") or "").strip() or "unknown"
+            # Author: prefer text-based extraction (see extract_author_from_text
+            # docstring — PDF metadata author is notoriously unreliable because
+            # the Author field gets stamped with whatever tool produced the PDF).
+            # We'll run this AFTER we've got the opening page(s) extracted.
+            meta_author_raw = (meta.get("Author") or "").strip()
 
             if len(pdf.pages) > 500:
                 warnings.warn(
@@ -66,6 +72,17 @@ class PdfIngestor(Ingestor):
                 except Exception:
                     size = 0.0
                 page_first_char_size.append(size)
+
+        # Author extraction: scan the first page or two of extracted text
+        # for a "by X" byline. If that fails, fall back to document
+        # metadata but only if the metadata author isn't one of the
+        # well-known tool names that get stamped in by accident.
+        opening_text = "\n".join(pages_text[:2])
+        author_from_text = extract_author_from_text(opening_text)
+        if author_from_text:
+            author = author_from_text
+        else:
+            author = clean_metadata_author(meta_author_raw) or "unknown"
 
         # Median body font size — anything meaningfully larger suggests a heading.
         sizes_nonzero = [s for s in page_first_char_size if s > 0]
@@ -102,6 +119,11 @@ class PdfIngestor(Ingestor):
 
         if not chapters:
             chapters = [RawChapter(number=1, title="Chapter 1", text="")]
+
+        # Remove the `by <author>` byline from the rendered narrator stream
+        # if we extracted an author from text — keep the title page clean.
+        # (The author still flows through as metadata; no reason to also
+        # hear it read aloud as a narrator line.)
 
         return RawStory(
             title=title,

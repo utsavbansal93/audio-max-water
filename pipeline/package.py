@@ -45,12 +45,29 @@ def _safe_filename(name: str) -> str:
     return "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip().replace(" ", "_")
 
 
+# Minimal ISO-639-1 → ISO-639-2 mapping for m4b metadata. Covers the
+# most common cases we'll see in audiobook sources; unknown codes pass
+# through so they're still set (ffmpeg will tolerate arbitrary 3-letter).
+_ISO_LANG_MAP = {
+    "en": "eng", "fr": "fre", "de": "ger", "es": "spa", "it": "ita",
+    "pt": "por", "ru": "rus", "zh": "zho", "ja": "jpn", "ko": "kor",
+    "ar": "ara", "hi": "hin", "nl": "dut", "pl": "pol", "sv": "swe",
+    "tr": "tur",
+}
+
+
+def _iso639_2(lang: str) -> str:
+    code = (lang or "en").split("-")[0].split("_")[0].strip().lower()
+    return _ISO_LANG_MAP.get(code, code if len(code) == 3 else "eng")
+
+
 def build_m4b(
     script_path: Path,
     chapter_mp3s: list[Path],
     out_dir: Path,
     title: str | None = None,
     author: str | None = None,
+    language: str = "en",
     cover_path: Path | None = None,
 ) -> Path:
     """Build an .m4b from stitched chapter MP3s.
@@ -79,10 +96,14 @@ def build_m4b(
         "\n".join(f"file '{p.resolve()}'" for p in chapter_mp3s) + "\n"
     )
 
-    # 2. FFMETADATA1 with chapter markers.
+    # 2. FFMETADATA1 with chapter markers. Language uses ffmpeg's
+    # iso-639-2 3-letter code where possible (e.g. "eng" for "en").
     ffmeta = [";FFMETADATA1", f"title={title}"]
     if author:
         ffmeta.append(f"artist={author}")
+        ffmeta.append(f"album_artist={author}")  # audiobook convention
+    ffmeta.append(f"language={_iso639_2(language)}")
+    ffmeta.append("genre=Audiobook")
     cursor = 0
     for ch, mp3 in zip(chapters, chapter_mp3s):
         dur = _duration_ms(mp3)
@@ -143,6 +164,7 @@ def package(
     build_dir: Path | None = None,
     title: str | None = None,
     author: str | None = None,
+    language: str = "en",
     cover_path: Path | None = None,
 ) -> Path:
     """Dispatch to the selected output format.
@@ -158,6 +180,7 @@ def package(
             out_dir=out_dir,
             title=title,
             author=author,
+            language=language,
             cover_path=cover_path,
         )
     if format == "epub3":
@@ -174,6 +197,7 @@ def package(
             build_dir=build_dir,
             title=title,
             author=author,
+            language=language,
             cover_path=cover_path,
         )
     raise ValueError(f"Unknown output format: {format!r}. Known: m4b, epub3")

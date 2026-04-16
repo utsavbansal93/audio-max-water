@@ -376,6 +376,19 @@ def _start_render(job: Job) -> None:
             from pipeline.package import package
             out_dir = REPO / "out"
             out_dir.mkdir(parents=True, exist_ok=True)
+            # Resolve cover: user-uploaded (via Options screen) wins;
+            # otherwise use the source-extracted cover if one was found.
+            effective_cover = job.cover_path
+            if effective_cover is None:
+                from pipeline.run import _find_source_cover
+                effective_cover = _find_source_cover(job.build_dir)
+            # Author + language from the parsed script (patched from
+            # ingest metadata + text-byline in parse.py).
+            script_author = (
+                job.script.author if job.script and job.script.author
+                and job.script.author != "unknown" else None
+            )
+            script_language = (job.script.language if job.script else "en") or "en"
             out_path = package(
                 script_path=job.script_path,
                 chapter_mp3s=chapter_mp3s,
@@ -383,8 +396,9 @@ def _start_render(job: Job) -> None:
                 format=job.output_format,  # type: ignore[arg-type]
                 build_dir=job.build_dir,
                 title=(job.script.title if job.script else None),
-                author=None,
-                cover_path=job.cover_path,
+                author=script_author,
+                language=script_language,
+                cover_path=effective_cover,
             )
             job.persist.output_path = str(out_path)
             job.status = "done"
@@ -710,6 +724,27 @@ async def api_delete_job(job_id: str, remove_build: bool = Form(False)):
     if not ok:
         raise HTTPException(404, "job not found")
     return RedirectResponse("/history", status_code=303)
+
+
+@app.get("/cover/{job_id}")
+def serve_source_cover(job_id: str):
+    """Serve the ingestor-extracted source cover for this job.
+
+    Resolution order: the user's uploaded cover (`job.cover_path`) wins;
+    else fall back to `<build_dir>/source_cover.*` written by the EPUB
+    ingestor. 404 if neither exists.
+    """
+    job = session_mgr.get(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    from pipeline.run import _find_source_cover
+    path = job.cover_path
+    if path is None or not path.exists():
+        if job.build_dir is not None:
+            path = _find_source_cover(job.build_dir)
+    if path is None or not path.exists():
+        raise HTTPException(404, "no cover for this job")
+    return FileResponse(path, media_type=f"image/{path.suffix.lstrip('.').lower() or 'jpeg'}")
 
 
 @app.get("/download/{job_id}")

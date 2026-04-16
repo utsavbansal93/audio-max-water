@@ -4,6 +4,39 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Added — author + language + auto-cover extraction (Phase 2.2 metadata)
+
+- `pipeline/ingest/base.py::extract_author_from_text` — scans the opening ~800 chars / 25 lines of a source for a byline (matches "by X", "written by X", "a novel by X", "author: X", optional italic markers, case-insensitive). Refuses matches longer than 100 chars or ending in connectors ("and", "or", "the") to avoid mid-prose false positives. Motivated by the user's observation that PDF / DOCX metadata-author fields are frequently wrong — stamped by zippers, converters, and default OS accounts instead of the real author.
+- `pipeline/ingest/base.py::clean_metadata_author` — sanity-checks document-metadata author strings against a ban-list of well-known tool names (Calibre, Adobe, Microsoft Office User, Pages, zipper, LaTeX, etc.). Returns None when the value is banned or too long to be a real name.
+- `pipeline/ingest/pdf_ingestor.py` now prefers text-based byline extraction; falls back to cleaned PDF metadata only when text extraction finds nothing. The source's own title page is the authority.
+- `pipeline/ingest/docx_ingestor.py` same pattern — text-first, ban-listed `core_properties.author` only as fallback.
+- `pipeline/ingest/epub_ingestor.py` keeps metadata-first (EPUB `<dc:creator>` is publisher-authored and reliable), but runs the text scanner as a cross-check; when metadata fails the ban-list, text wins.
+- `pipeline/ingest/base.py::RawStory` gains a `language` field; default `"en"`. Populated from EPUB `<dc:language>` (stripped to 2-letter code).
+- `pipeline/ingest/epub_ingestor.py::_extract_cover_from_book` — automatically extracts the cover image from EPUB sources. Resolution order: (1) EPUB3 `properties="cover-image"` manifest item; (2) EPUB2 `<meta name="cover" content="<X>"/>` where `<X>` can be either an item id OR a filename (the spec says id, but Sigil and many other editors write filenames — we handle both); (3) filename heuristic for items named "cover". Robust to ebooklib's `ITEM_IMAGE` type-tag bug by checking media-type strings directly.
+- `pipeline/parse.py::parse_to_disk` persists extracted cover bytes to `<build_dir>/source_cover.<ext>` when the ingestor found one; patches `ScriptModel.author` from `raw.author` when the LLM reported "unknown" and the ingestor has a better value; same for `language`.
+- `pipeline/run.py::_find_source_cover` — helper used by the CLI orchestrator to locate `source_cover.*` in a build dir. Auto-used as the cover when the user didn't supply `--cover`.
+- `pipeline/schema.py::ScriptModel` — new `author: str = "unknown"` and `language: str = "en"` fields (both default-valued, so old `script.json` files still parse).
+- `pipeline/package.py::build_m4b` — new `language: str` kwarg; writes `artist`, `album_artist`, `language` (ISO 639-2 via a small mapping), and `genre=Audiobook` to the m4b's FFMETADATA. `package()` dispatcher threads the kwarg through.
+- `pipeline/epub3.py::build_audio_epub3` — new `language: str` kwarg; replaces the hard-coded `<dc:language>en</dc:language>` with the parsed value.
+- `prompts/parse_story.md` — schema updated with `author` and `language` top-level fields so the LLM is primed to populate them from the source.
+
+### Added — Phase 2.2 UI
+
+- `GET /cover/<job_id>` FastAPI route — serves the job's cover image (user-uploaded via Options screen if present, else the auto-extracted `source_cover.*`).
+- Options screen shows an inline cover preview when a source cover was extracted: "Using the cover from your file — upload a replacement below, or leave blank to keep this one." Replaces nothing; the file picker still accepts a user override.
+- Options screen shows the detected author in a Metadata card: "Detected from your file." Transparent about what's being set; the user can notice a wrong auto-detect and fix by manual override (backlog: inline edit).
+- `ui/services/session.py::Job.public_view()` now exposes `author`, `language`, and `source_cover_available` to templates.
+- `ui/app.py::_start_render` passes `script.author` + `script.language` + resolved cover (user upload wins, else source cover) to `package()`. Metadata flows end-to-end through the web UI path too — not just the CLI.
+- CSS: `.cover-preview-row` + `.cover-preview` for the 96×96 preview image on Options.
+
+### Backlog additions
+
+- Cover extraction for non-EPUB formats (PDF page-1 image, DOCX inline images) with user-confirm UX.
+- Auto-generate placeholder cover (library-bound Pillow render with title + author) when no cover is available + smart-crop to 1:1 Audible-standard square.
+- Cover upload on the Upload screen (front-of-flow) — today's Options-screen upload works; backlog captures "let me do this up front."
+- Cover override on the Done screen — re-package without re-rendering.
+- Richer metadata preservation: publisher, ISBN, publication date, subject/genre, description, series — from EPUB `<dc:*>` into audio-EPUB3 output and m4b MP4 atoms where supported.
+
 ### Fixed — upload handling for directory-form EPUBs + inline error rendering
 
 - `ui/app.py::_save_upload` now accepts `.zip` uploads and sniffs the container: if it's a valid EPUB (has an uncompressed `mimetype` entry reading `application/epub+zip`), promote to `.epub` and proceed; otherwise reject with a clear 400 explaining what the zip was missing. Motivated by the common case of a `.epub` on disk that's actually an unzipped directory — browsers auto-zip it on drag-drop and the server was rejecting the resulting `.zip` with an unhelpful error page.

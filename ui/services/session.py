@@ -187,6 +187,14 @@ class Job:
 
     def public_view(self) -> dict:
         view = self.persist.public_view()
+        # Expose the author + language from the parsed script so the UI
+        # can render them on Options / Done screens.
+        if self.script:
+            view["author"] = self.script.author
+            view["language"] = self.script.language
+        # Mark whether a source-extracted cover is available for this
+        # job — the Options page uses this to show a preview.
+        view["source_cover_available"] = self._has_source_cover()
         # Enrich with live in-memory data for the voices page (proposals +
         # character voice-id hints come from propose(), which runs only
         # in-process).
@@ -221,6 +229,15 @@ class Job:
                 for c in self.script.characters
             ]
         return view
+
+    def _has_source_cover(self) -> bool:
+        bd = self.build_dir
+        if bd is None:
+            return False
+        for ext in ("jpg", "jpeg", "png", "gif", "webp"):
+            if (bd / f"source_cover.{ext}").exists():
+                return True
+        return False
 
     # --- hydration from disk (resume path) ---------------------------
 

@@ -43,6 +43,17 @@ def _default_build_dir(input_path: Path) -> Path:
     return REPO / "build" / input_path.stem
 
 
+def _find_source_cover(build_dir: Path) -> Path | None:
+    """Return the path to a source-extracted cover image if one exists
+    at `<build_dir>/source_cover.*`. Written by parse_to_disk when the
+    ingestor found a cover in the source file."""
+    for ext in ("jpg", "jpeg", "png", "gif", "webp"):
+        p = build_dir / f"source_cover.{ext}"
+        if p.exists():
+            return p
+    return None
+
+
 def _write_cast(cast: CastModel, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cast.model_dump(), indent=2) + "\n")
@@ -201,6 +212,12 @@ def run(
     # --- Stage 5: package ---------------------------------------------
     emit(on_progress, ProgressEvent(stage="package", phase="start", message=f"building .{format}"))
     t0 = time.perf_counter()
+    # If the user didn't pass --cover, use the source-extracted cover
+    # (written by parse_to_disk when the ingestor found one). Explicit
+    # user choice always wins.
+    effective_cover = cover_path or _find_source_cover(build_dir)
+    # Author + language come from the parsed script, which was patched
+    # with ingestor-detected values in parse.py.
     out_path = package(
         script_path=script_path,
         chapter_mp3s=chapter_mp3s,
@@ -208,8 +225,9 @@ def run(
         format=format,  # type: ignore[arg-type]
         build_dir=build_dir,
         title=script.title,
-        author=None,
-        cover_path=cover_path,
+        author=(script.author if script.author and script.author != "unknown" else None),
+        language=script.language or "en",
+        cover_path=effective_cover,
     )
     log.info("stage package: %.1fs → %s", time.perf_counter() - t0, out_path)
     emit(on_progress, ProgressEvent(

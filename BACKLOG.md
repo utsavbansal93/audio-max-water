@@ -93,6 +93,45 @@ Landed as `ui/` + `pipeline/serve.py` + `pipeline/mcp_server.py`. See DECISIONS 
 
 **Parent.** Web UI + embedded MCP server.
 
+### Cover extraction for non-EPUB formats + user confirm
+
+**What.** For PDF and DOCX sources, scan for an image at the start of the document that could be a cover, then surface it on the UI for confirmation before embedding.
+
+Specifically:
+- **PDF**: extract images from page 1 (or the first few pages) using `pdfplumber.images` or `pypdfium2`. Pick the largest embedded raster image positioned near the top of the page, or the one that covers most of the page. Ignore small decorative elements (logos, page-number glyphs). If the first page is entirely a scanned full-page image (as with a book-dump PDF), that IS the cover.
+- **DOCX**: extract inline images from the first paragraph / first section. python-docx can enumerate `document.part.related_parts` to find the image blobs.
+- **None of these use an LLM** — pure heuristics, fast, deterministic.
+
+**UI confirm flow.** When the ingestor finds a candidate cover, show it on the Options screen with a caption "Found this image at the start of your file — use as cover?" and buttons **Use it** / **Pick different** / **No cover**. Preserves the auto-detect convenience while giving the user an explicit veto. Unlike the EPUB case (where the EPUB spec unambiguously says "this IS the cover"), PDF and DOCX extraction is a guess — opt-in is the right default.
+
+**Why deferred.** The EPUB case was the low-hanging fruit (spec-declared, zero guessing). PDF / DOCX cover extraction needs image-position heuristics, candidate ranking, and a new UI confirmation step. Its own chunk of work.
+
+### Auto-generate a placeholder cover when none is available
+
+**What.** When the ingestor finds no cover AND the user doesn't upload one, generate a simple library-bound-style cover via Pillow: dark background, title in a serif font at ~60% height, author name below in a smaller size, optional hairline frame. Written as an ImageDraw composition — no stock assets.
+
+All output covers should be normalized to **1:1 aspect (square)** per audiobook standard (Audible convention — legacy of CD audiobook jackets that were square). Smart-crop when the source image is non-square: compute edge-energy saliency, find the densest N×N region, crop to it. Rule-based, no ML.
+
+**Why deferred.** This is nice-to-have polish. A generated cover isn't a better product than a missing cover in most cases — and for users who care about their audiobook's cover, uploading one is a 2-second Options-screen click. Worth building once there's a clear cohort of users who want the auto-generated option.
+
+### Cover upload on the Upload screen (front-of-flow)
+
+**What.** Second drag-drop area on the Upload screen for optional cover art, so the user can configure cover + book in one interaction instead of discovering the cover option on the Options screen after a 30-second parse.
+
+**Why deferred.** The Options-screen upload already covers the workflow. Front-of-flow is an ergonomic refinement; users who know they want a specific cover can set it in 2 clicks today.
+
+### Cover override on the Done screen (post-render)
+
+**What.** Re-package an already-rendered audiobook with a new cover without re-running TTS. Button on the Done screen: "Change cover." Re-runs just `pipeline.package` with the existing chapter MP3s and the new cover image. Fast (seconds, not minutes).
+
+**Why deferred.** Covered by "upload a different cover on the Options screen, render again" today; the render IS cheap on a cache hit (per-line WAVs stay unchanged, only the package step runs). Worth building when we have a clearer signal that users forget covers until after render.
+
+### Richer metadata from source → output
+
+**What.** Extract and preserve full bibliographic metadata where available: publisher, ISBN, publication date, subject/genre, description, series name, series index. EPUB has these in `<dc:*>` tags; write them to the output audio-EPUB3 OPF manifest and to the m4b's MP4 metadata atoms where supported (date, genre, comment, album).
+
+**Why deferred.** Phase 2.2 threaded the minimum — title, author, language. The rest of the Dublin Core metadata needs a consumer before it's worth building: Apple Books uses some; Audiobookshelf uses more; iTunes / Apple Music only uses a subset. Pick this up once there's a concrete player we're tuning for.
+
 ### URL ingestor — "paste a link"
 
 **What.** Let the user paste a URL on the Upload screen. If the page is reachable and its main content is extractable (non-SPA, reachable without auth, reasonably article-shaped), ingest it like any other source. Fall back to a clear error ("That page is behind auth / JavaScript-only / too short to parse") if not.

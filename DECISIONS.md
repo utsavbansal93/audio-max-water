@@ -569,3 +569,53 @@ Two distinct problems, one user experience:
 - Two subtle things: the ZIP sniff is forgiving about mimetype-entry position (EPUB 3.3 says it SHOULD be first STORED, but some tools compress it or reorder). Our `_zip_epub_dir()` on the write-side IS strict — matches the spec for what we produce. And the directory ingestor emits a `warnings.warn()` so the user sees "re-zipped to temp EPUB" in the log, not a silent internal transformation.
 
 **Retrospective lesson.** *When a user calls you wrong, check both bugs at once.* The report was "I uploaded an EPUB and got rejected." The first bug (directory → zip rejection) was real. The second bug (error renders as raw JSON page) is what turned a recoverable 400 into a user-facing failure. Either bug alone is survivable; both together produce a "this product is broken" feeling. The instinct to fix only the reported one would have left the JSON-page-on-error surface waiting to bite on the next legitimate 400.
+
+---
+
+## 0031 · 2026-04-16 · Text-first author extraction for PDF / DOCX; metadata-first for EPUB
+
+**Context.** User asked whether source-file metadata flows through to the generated audiobook. Audit revealed that `RawStory.author` *was* being captured by every ingestor and then silently dropped on the path to `package()` — the output had no `artist` tag at all unless the user passed `--author` on the CLI. While fixing that, a second question surfaced: which source field IS the author?
+
+For EPUB, `<dc:creator>` is a metadata field the publisher authored. It's (usually) right. "Brandon Sanderson," "Jane Austen," etc.
+
+For PDF, the `Author` info dictionary entry is frequently wrong. Authors use a text editor or converter that stamps its own name ("Calibre," "Adobe Acrobat," "Microsoft Office User") into the field, or the field is inherited from a template ("John's Laptop"). For DOCX, same problem: `core_properties.author` is whoever last saved the file on their computer, not the book's author.
+
+**Options considered.**
+- **Trust metadata always.** Fast, simple, frequently wrong on PDF/DOCX.
+- **Text-only extraction.** Scan the opening page(s) for a byline regex. Reliable when it hits, but EPUB front matter varies wildly and sometimes lacks a byline in the rendered text (cover image carries the author).
+- **Text-first with metadata fallback + metadata ban-list.** Try text extraction on the opening page(s). If a confident byline match exists, use it. Otherwise fall back to metadata, but only if the metadata author isn't on a ban-list of known tool names. Per format: PDF and DOCX prefer text; EPUB prefers metadata but cross-checks against text.
+
+**Decision.** Third option. `extract_author_from_text(text)` in `pipeline/ingest/base.py` runs a byline regex (`by X`, `written by X`, `a novel by X`, `author: X`, with optional italic markers) on the first ~800 chars, with guardrails (match must be ≤ 100 chars and not end in a connector word). `clean_metadata_author(name)` ban-lists the known tool names. Per-format policy:
+- **PDF / DOCX**: text first, ban-listed metadata as fallback.
+- **EPUB**: metadata first (publisher-authored is reliable), but if metadata matches the ban-list, trust text. If metadata and text disagree non-trivially, keep metadata but warn — the user can notice and override.
+
+**Consequences.**
+- Hyperthief.epub: metadata gave us `"Sanderson, Brandon"` / `"Patterson, Janci"` (multi-author; we pick the first); text gave us `"Brandon Sanderson"`. Both land at a usable answer.
+- PDFs authored in Word-via-Adobe-Acrobat now show the real author instead of "Microsoft Office User." DOCX files saved by someone's laptop show the real author instead of their OS account name.
+- The ban-list is an open list — grows as we encounter new tool names in the wild. It's a case-insensitive substring match ("microsoft office user" gets caught by the "microsoft" entry), which is aggressive but safe: real authors rarely have tool names embedded in their names.
+- `extract_author_from_text` is deliberately conservative. It requires the byline to be on its own line; it won't match mid-sentence prose like "accompanied by silence." Refuses matches longer than 80 chars. Refuses captures ending in connectors. Better to return None and let metadata take over than produce a garbage author string.
+
+**Retrospective lesson.** *The source's front matter is usually more trustworthy than its metadata, except when the publisher wrote the metadata.* EPUB publishers care about metadata because ereaders display it; PDF producers often don't (the metadata is a side-effect of the editor). When designing an extraction layer, decide per-format which signal is authoritative and encode that as policy, not as a single ranked list.
+
+---
+
+## 0032 · 2026-04-16 · EPUB cover auto-extraction from manifest
+
+**Context.** The user explicitly asked for auto-cover extraction where the source makes it easy. EPUB does: the container declares the cover image via either `properties="cover-image"` (EPUB3) or `<meta name="cover">` (EPUB2). Running tests on Hyperthief.epub exposed two real-world quirks:
+
+1. **ebooklib's `ITEM_IMAGE` type tag is unreliable.** `book.get_items_of_type(ITEM_IMAGE)` returned nothing even when the manifest clearly had image items. Using `media_type.startswith("image/")` as the image check works across versions.
+2. **`<meta name="cover" content="Cover.jpg">`** — content pointing at a filename, not an item id. The EPUB 2.0.1 spec says content MUST be an item id. In the wild, Sigil and many other editors write filenames. Handling only ids would miss a large fraction of real-world EPUBs.
+
+**Decision.** `_extract_cover_from_book` with a 3-tier resolution:
+1. EPUB3: manifest item with `properties="cover-image"`.
+2. EPUB2: `<meta name="cover" content="...">` — try as item id first, fall back to filename match (case-insensitive suffix match, so "Cover.jpg" finds "Images/Cover.jpg").
+3. Heuristic: any manifest image whose filename contains "cover".
+
+All image checks use MIME-type prefix (`image/`) rather than `ITEM_IMAGE`, working around the ebooklib type-tag bug.
+
+**Consequences.**
+- Hyperthief.epub now yields a 470KB JPEG cover auto-extracted from the manifest (tier 2, filename fallback).
+- The extracted bytes get written to `<build_dir>/source_cover.<ext>` during parse. Both the CLI orchestrator and the UI's render path look there when the user didn't explicitly provide `--cover` / upload on the Options screen. User override always wins.
+- UI shows a 96×96 preview on the Options screen with "Using the cover from your file — upload a replacement below, or leave blank to keep this one." Visible default, one-click override.
+
+**Retrospective lesson.** *Implementing a spec requires testing against the spec's actual implementations.* The EPUB 2 spec says cover content="" MUST be an item id. Real EPUBs often have a filename there. If you only implement the letter of the spec, you'll silently miss a majority of real-world files. Always ground spec implementations in representative test inputs — on which: the user's Hyperthief.epub found two ebooklib/real-world quirks on first encounter that the spec alone wouldn't have surfaced.

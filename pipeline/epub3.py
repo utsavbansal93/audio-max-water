@@ -193,6 +193,7 @@ def _render_opf(
     *,
     title: str,
     author: str,
+    language: str,
     book_uuid: str,
     chapters: list[ChapterModel],
     chapter_durations_s: dict[int, float],
@@ -257,7 +258,7 @@ def _render_opf(
         f'    <dc:identifier id="bookid">urn:uuid:{book_uuid}</dc:identifier>\n'
         f'    <dc:title>{_escape(title)}</dc:title>\n'
         f'    <dc:creator>{_escape(author)}</dc:creator>\n'
-        '    <dc:language>en</dc:language>\n'
+        f'    <dc:language>{_escape(language or "en")}</dc:language>\n'
         f'    <meta property="dcterms:modified">{now}</meta>\n'
         + (f'    <meta name="cover" content="cover_img"/>\n' if cover_filename else "")
         + duration_meta + "\n"
@@ -283,6 +284,7 @@ def build_audio_epub3(
     build_dir: Path,
     title: str | None = None,
     author: str | None = None,
+    language: str = "en",
     cover_path: Path | None = None,
 ) -> Path:
     """Produce an audio-EPUB3 (.epub) with SMIL Media Overlays.
@@ -341,6 +343,7 @@ def build_audio_epub3(
         opf = _render_opf(
             title=title,
             author=author,
+            language=language,
             book_uuid=book_uuid,
             chapters=chapters,
             chapter_durations_s=chapter_durations_s,

@@ -26,12 +26,15 @@ import tempfile
 import warnings
 import zipfile
 from pathlib import Path
+from typing import Any, Optional
 
 from .base import (
     Ingestor,
     RawChapter,
     RawStory,
+    clean_metadata_author,
     clean_text,
+    extract_author_from_text,
     guess_title_from_path,
 )
 
@@ -57,6 +60,90 @@ def _looks_like_unzipped_epub(path: Path) -> bool:
         return mimetype_file.read_text(encoding="ascii").strip() == EPUB_MIMETYPE
     except (UnicodeDecodeError, OSError):
         return False
+
+
+_IMAGE_MIME_TO_EXT = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+}
+
+
+def _ext_from_mime(mime: str | None) -> str:
+    """Map an EPUB image media-type to a file extension. Defaults to jpg
+    if we don't recognize the mime — cover embedders are lenient."""
+    if not mime:
+        return "jpg"
+    return _IMAGE_MIME_TO_EXT.get(mime.strip().lower(), "jpg")
+
+
+def _is_image_item(item) -> bool:
+    """True iff `item` looks like an image manifest entry.
+
+    We don't trust `ITEM_IMAGE` in isolation — some ebooklib versions
+    return nothing for `get_items_of_type(ITEM_IMAGE)` on certain files
+    (observed on Hyperthief / Sigil-authored EPUBs). MIME-type check
+    is authoritative.
+    """
+    media = (getattr(item, "media_type", "") or "").lower()
+    return media.startswith("image/")
+
+
+def _extract_cover_from_book(book) -> tuple[Optional[bytes], Optional[str]]:
+    """Return `(bytes, ext)` for the book's cover image if found.
+
+    Resolution order (stops at first hit):
+      1. EPUB3: any manifest item with `properties="cover-image"`.
+      2. EPUB2: `<meta name="cover" content="<X>"/>` where <X> is
+         either a manifest item id OR a filename. Both forms occur in
+         the wild — the spec only specifies id, but Sigil and many
+         other EPUB editors write filenames.
+      3. Heuristic: any image whose filename contains "cover".
+    """
+    # 1. EPUB3 cover-image property.
+    for item in book.get_items():
+        if not _is_image_item(item):
+            continue
+        props = getattr(item, "properties", None) or []
+        if "cover-image" in props:
+            return item.content, _ext_from_mime(item.media_type)
+
+    # 2. EPUB2 <meta name="cover" content="..."/>.
+    cover_ref: Optional[str] = None
+    try:
+        for _value, attrs in (book.get_metadata("OPF", "meta") or []):
+            if isinstance(attrs, dict) and attrs.get("name") == "cover":
+                cover_ref = attrs.get("content")
+                break
+    except Exception:
+        cover_ref = None
+    if cover_ref:
+        # Try as item id first.
+        item = book.get_item_with_id(cover_ref)
+        if item is not None and _is_image_item(item):
+            return item.content, _ext_from_mime(item.media_type)
+        # Fall back to filename match (Sigil-style). EPUBs frequently
+        # write `content="Cover.jpg"` or `content="Images/Cover.jpg"`.
+        needle = cover_ref.lower()
+        for cand in book.get_items():
+            if not _is_image_item(cand):
+                continue
+            fn = (getattr(cand, "file_name", "") or "").lower()
+            if fn == needle or fn.endswith("/" + needle) or fn.endswith(needle):
+                return cand.content, _ext_from_mime(cand.media_type)
+
+    # 3. Heuristic: any image whose filename contains "cover".
+    for item in book.get_items():
+        if not _is_image_item(item):
+            continue
+        name = (getattr(item, "file_name", "") or "").lower()
+        if "cover" in name:
+            return item.content, _ext_from_mime(item.media_type)
+
+    return None, None
 
 
 def _zip_epub_dir(src_dir: Path, out: Path) -> None:
@@ -228,9 +315,21 @@ class EpubIngestor(Ingestor):
             warnings.simplefilter("ignore")
             book = epub.read_epub(str(path))
 
-        # Metadata
+        # Metadata. EPUB dc:creator is authored by the publisher and is
+        # usually reliable (unlike PDF / DOCX). Still cross-check against
+        # a text-based byline scan further down; if metadata looks like a
+        # tool name ("Calibre", "Adobe", etc.) we prefer the text result.
         title = self._meta_first(book, "title") or guess_title_from_path(path)
-        author = self._meta_first(book, "creator") or "unknown"
+        meta_author_raw = self._meta_first(book, "creator")
+        language = self._meta_first(book, "language") or "en"
+        # Normalize common language-tag oddities (e.g. "en-US" → "en").
+        if language:
+            language = language.split("-")[0].split("_")[0].strip().lower() or "en"
+
+        # Cover extraction (EPUB3 properties="cover-image" OR EPUB2
+        # <meta name="cover">). Captured bytes get persisted in
+        # RawStory.metadata for parse.py to write out as source_cover.<ext>.
+        cover_bytes, cover_ext = _extract_cover_from_book(book)
 
         # Map spine item IDs → TOC titles where possible.
         toc_titles = self._toc_title_map(book)
@@ -314,11 +413,43 @@ class EpubIngestor(Ingestor):
         if not chapters:
             chapters = [RawChapter(number=1, title="Chapter 1", text="")]
 
+        # Final author decision: text-based byline scan on chapter 1 as a
+        # cross-check. EPUB dc:creator is usually right; use it unless
+        # it's tool-pollution or we find a confident text byline and the
+        # metadata is missing.
+        opening_text = chapters[0].text if chapters else ""
+        author_from_text = extract_author_from_text(opening_text)
+        meta_author_clean = clean_metadata_author(meta_author_raw)
+        if meta_author_clean:
+            author = meta_author_clean
+            # If the text has a byline that disagrees with a plausible
+            # metadata value, trust metadata (publisher-authored) — but
+            # surface via warnings if they diverge non-trivially, so the
+            # user can intervene.
+            if author_from_text and author_from_text.lower() != author.lower():
+                warnings.warn(
+                    f"epub: metadata author {author!r} differs from "
+                    f"text byline {author_from_text!r}; keeping metadata",
+                    stacklevel=2,
+                )
+        elif author_from_text:
+            author = author_from_text
+        else:
+            author = "unknown"
+
+        meta: dict[str, Any] = {}
+        if cover_bytes is not None:
+            meta["cover_bytes"] = cover_bytes
+            meta["cover_ext"] = cover_ext
+            meta["cover_source"] = "epub-manifest"
+
         return RawStory(
             title=title,
             author=author,
+            language=language,
             source_format="epub",
             chapters=chapters,
+            metadata=meta,
         )
 
     @staticmethod

@@ -29,9 +29,15 @@ class RawChapter:
 
 @dataclass
 class RawStory:
-    """Pre-parsed story awaiting LLM structuring."""
+    """Pre-parsed story awaiting LLM structuring.
+
+    `metadata` is a free-form grab bag for per-format extras that
+    don't fit the core schema — e.g. `cover_bytes` + `cover_ext` for
+    EPUB covers, `language` for sources where it's reliably known.
+    """
     title: str
     author: str = "unknown"
+    language: str = "en"
     source_format: str = ""
     chapters: list[RawChapter] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
@@ -151,3 +157,110 @@ def guess_title_from_path(path: Path) -> str:
     """Fallback title derived from filename: kebab/snake → Title Case."""
     stem = path.stem.replace("_", " ").replace("-", " ").strip()
     return " ".join(w.capitalize() for w in stem.split())
+
+
+# --- author extraction from text -------------------------------------------
+
+# Matches "by Name", "written by Name", "a novel by Name", "author: Name",
+# with optional italic markers (* or _) wrapping the byline. Case-insensitive.
+_BYLINE_RE = re.compile(
+    r"^\s*[\*_]*\s*"
+    r"(?:by|written\s+by|a\s+(?:novel|book|story|memoir|work)\s+by|author\s*:?)\s+"
+    r"\*?_?([^\n*_]+?)_?\*?\s*$",
+    re.IGNORECASE,
+)
+
+# Document metadata "Author" fields that are almost never real authors — these
+# are the tools that produced the file announcing themselves. If the
+# metadata author matches one of these, we ignore it.
+_META_AUTHOR_BAN_LIST = {
+    "",
+    "unknown",
+    "administrator",
+    "user",
+    "admin",
+    "calibre",
+    "calibre-ebook.com",
+    "adobe acrobat",
+    "adobe",
+    "microsoft office user",
+    "microsoft word",
+    "microsoft",
+    "word",
+    "pages",
+    "libreoffice",
+    "openoffice",
+    "google docs",
+    "zipper",
+    "pdftex",
+    "latex",
+    "kindle",
+    "amazon",
+    "smashwords",
+    "epub",
+}
+
+
+def extract_author_from_text(
+    text: str,
+    *,
+    max_chars: int = 800,
+    max_lines: int = 25,
+) -> str | None:
+    """Scan the opening text for a `by <Name>` byline.
+
+    For PDF and DOCX sources, the document-metadata Author field is
+    frequently garbage (zipper apps, converters, Office defaults). The
+    text itself is more reliable — a real book prints the author's name
+    on its title page, usually on a short standalone line right after
+    the title.
+
+    Strategy:
+      - Look at the first `max_chars` characters / `max_lines` lines.
+      - Skip blank lines.
+      - Skip long lines (> 100 chars) — they're prose, not bylines.
+      - Match "by X", "written by X", "a novel by X", "author: X",
+        with optional italic markers. Case-insensitive.
+      - Reject captures that are too short, too long, or look like prose
+        ending (trailing "and", "or", "to"…).
+
+    Returns the cleaned author string, or None if no confident match.
+    """
+    head = text[:max_chars]
+    for i, line in enumerate(head.splitlines()):
+        if i >= max_lines:
+            break
+        stripped = line.strip()
+        if not stripped or len(stripped) > 100:
+            continue
+        m = _BYLINE_RE.match(stripped)
+        if not m:
+            continue
+        author = m.group(1).strip().rstrip(",.;:").strip("*_").strip()
+        # Length guardrails.
+        if not (2 <= len(author) <= 80):
+            continue
+        # Reject captures that end in a connector word — usually means the
+        # match absorbed too much context.
+        last_word = author.split()[-1].lower() if author.split() else ""
+        if last_word in {"and", "or", "to", "the", "of", "in", "for", "with"}:
+            continue
+        return author
+    return None
+
+
+def clean_metadata_author(meta_author: str | None) -> str | None:
+    """Return `meta_author` iff it looks like a plausible human author,
+    else None. Used as a fallback when text-based extraction fails."""
+    if not meta_author:
+        return None
+    cleaned = meta_author.strip()
+    if not cleaned or len(cleaned) > 80:
+        return None
+    # Case-insensitive ban-list match (substring OK — "Microsoft Office User"
+    # has "microsoft" inside).
+    low = cleaned.lower()
+    for banned in _META_AUTHOR_BAN_LIST:
+        if banned and banned in low:
+            return None
+    return cleaned

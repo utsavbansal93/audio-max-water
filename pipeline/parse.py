@@ -78,6 +78,18 @@ def parse_raw_story(
 
     # Validate wording against the canonical source_md. We write it to a
     # temp path so we can reuse the existing file-based validator API.
+    # Patch author / language from the ingestor when the LLM didn't
+    # capture them (or got them wrong). Text-based author extraction in
+    # the ingest layer is more reliable than trusting the LLM to spot
+    # the byline — especially for PDF/DOCX where the source is noisy.
+    if raw.author and raw.author != "unknown" and (
+        not script.author or script.author.lower() == "unknown"
+    ):
+        script = script.model_copy(update={"author": raw.author})
+    if raw.language and (not script.language or script.language == "en"):
+        if raw.language != "en":
+            script = script.model_copy(update={"language": raw.language})
+
     errors = _validate_against_source(script, source_md)
     if errors and retry_on_wording_divergence:
         log.warning("parse: faithful-wording divergence on first pass, retrying")
@@ -105,9 +117,10 @@ def parse_raw_story(
             + "\n".join(errors)
         )
 
-    log.info("parse: OK — %d chapters, %d lines",
+    log.info("parse: OK — %d chapters, %d lines  author=%r  lang=%r",
              len(script.chapters),
-             sum(len(c.lines) for c in script.chapters))
+             sum(len(c.lines) for c in script.chapters),
+             script.author, script.language)
     return script, source_md
 
 
@@ -200,12 +213,26 @@ def parse_to_disk(
         message=f"reading {input_path.name}",
     ))
     raw = ingest(input_path)
-    log.info("ingest: OK — format=%s, %d chapters, %d words",
-             raw.source_format, len(raw.chapters), raw.total_words)
+    log.info("ingest: OK — format=%s, %d chapters, %d words, author=%r, lang=%r",
+             raw.source_format, len(raw.chapters), raw.total_words,
+             raw.author, raw.language)
+
+    # If the ingestor extracted a cover image, persist it to build_dir
+    # so package() can pick it up without the orchestrator needing to
+    # pass bytes through kwargs.
+    cover_bytes = raw.metadata.get("cover_bytes")
+    cover_ext = raw.metadata.get("cover_ext", "jpg")
+    if cover_bytes:
+        cover_path_from_source = build_dir / f"source_cover.{cover_ext}"
+        cover_path_from_source.write_bytes(cover_bytes)
+        log.info("ingest: extracted cover (%s, %d bytes) → %s",
+                 cover_ext, len(cover_bytes), cover_path_from_source)
+
     emit(on_progress, ProgressEvent(
         stage="ingest", phase="done",
         message=f"read {raw.source_format} · {len(raw.chapters)} chapter(s), "
-                f"{raw.total_words} words",
+                f"{raw.total_words} words"
+                + (" · cover found" if cover_bytes else ""),
     ))
     fresh_source = raw.to_source_md()
 

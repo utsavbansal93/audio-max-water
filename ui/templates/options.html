@@ -30,11 +30,33 @@
 
     <fieldset class="card">
       <legend>Cover art <span class="caption muted">(optional)</span></legend>
+      {% if job.source_cover_available %}
+        <div class="cover-preview-row">
+          <img src="/cover/{{ job.job_id }}" alt="Cover from source"
+               class="cover-preview" />
+          <div>
+            <strong>Using the cover from your file</strong>
+            <p class="caption muted">Upload a replacement below, or leave blank to keep this one.</p>
+          </div>
+        </div>
+      {% endif %}
       <label class="cover-upload">
         <input type="file" name="cover" accept="image/jpeg,image/png" id="cover-input" />
-        <span id="cover-label" class="caption muted">Choose an image — JPG or PNG</span>
+        <span id="cover-label" class="caption muted">
+          {% if job.source_cover_available %}Choose a different image — JPG or PNG{% else %}Choose an image — JPG or PNG{% endif %}
+        </span>
       </label>
     </fieldset>
+
+    {% if job.author and job.author != "unknown" %}
+    <fieldset class="card">
+      <legend>Metadata</legend>
+      <p class="caption">
+        <strong>{{ job.author }}</strong>
+        <span class="caption muted"> · detected from your file</span>
+      </p>
+    </fieldset>
+    {% endif %}
 
     <details class="advanced">
       <summary class="caption">Voice engine</summary>

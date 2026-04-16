@@ -5,6 +5,8 @@ You receive a prose story and produce STRICT JSON matching this schema:
 ```json
 {
   "title": "string",
+  "author": "string — the book's author, taken from the byline or title page if visible. If unclear, 'unknown'.",
+  "language": "string — 2-letter ISO code (e.g. 'en', 'fr', 'es'). Default 'en' if unclear.",
   "book_context": "string — 2–5 sentences grounding any emotion labels in the broader work (character arcs, prior events). If the story is self-contained, 'none' is fine.",
   "characters": [
     {

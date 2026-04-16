@@ -733,6 +733,25 @@ legend {
   width: 100%;
 }
 
+.cover-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 8px 0 20px;
+}
+.cover-preview {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-button);
+  object-fit: cover;
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--shadow-sm);
+}
+.cover-preview-row strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
 /* ---------- topbar nav ---------- */
 
 .topbar-nav {

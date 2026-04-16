@@ -14,7 +14,9 @@ from .base import (
     Ingestor,
     RawChapter,
     RawStory,
+    clean_metadata_author,
     clean_text,
+    extract_author_from_text,
     guess_title_from_path,
 )
 
@@ -43,10 +45,14 @@ class DocxIngestor(Ingestor):
 
         doc = docx.Document(str(path))
 
-        # Try to pick up title/author from core properties.
+        # Title: core properties are usually reliable for title.
         props = doc.core_properties
         title = (props.title or "").strip() or guess_title_from_path(path)
-        author = (props.author or "").strip() or "unknown"
+        # Author: core_properties.author is notoriously wrong on DOCX —
+        # it reflects whoever's computer last saved the file, not the
+        # book's real author. Extract from text first; use metadata only
+        # as a ban-listed fallback.
+        meta_author_raw = (props.author or "").strip()
 
         # Walk paragraphs, splitting on Heading 1 / Heading 2.
         chapters: list[RawChapter] = []
@@ -82,6 +88,14 @@ class DocxIngestor(Ingestor):
             # No paragraphs found — fall back to an empty single chapter rather
             # than erroring, so the user gets a useful message downstream.
             chapters = [RawChapter(number=1, title="Chapter 1", text="")]
+
+        # Author extraction: text first, then ban-listed metadata.
+        opening_text = chapters[0].text if chapters else ""
+        author_from_text = extract_author_from_text(opening_text)
+        if author_from_text:
+            author = author_from_text
+        else:
+            author = clean_metadata_author(meta_author_raw) or "unknown"
 
         return RawStory(
             title=title,

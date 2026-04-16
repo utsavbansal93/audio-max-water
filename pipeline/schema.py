@@ -36,6 +36,8 @@ class ChapterModel(BaseModel):
 
 class ScriptModel(BaseModel):
     title: str
+    author: str = "unknown"
+    language: str = "en"
     book_context: str = "none"
     characters: list[CharacterModel]
     chapters: list[ChapterModel]
