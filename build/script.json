@@ -1,0 +1,128 @@
+{
+  "title": "The Final Reconciliation (The Walk at Longbourn)",
+  "book_context": "From Jane Austen's 'Pride and Prejudice', late Chapter 58. Darcy proposed to Elizabeth at Hunsford months earlier and was rejected with fury — she accused him of ruining Jane's happiness and of destroying Wickham. His subsequent letter corrected her view of Wickham and forced Elizabeth into painful self-knowledge. Then came Lydia's elopement; unknown to the Bennets, Darcy tracked down the couple in London and bribed Wickham into marriage to save the Bennet family from ruin. Elizabeth has just discovered this. The scene is a walk near Longbourn — the two finally speak openly, but Darcy does not yet know her feelings have reversed. His tone is restrained but exposed; hers is humbled, astonished, joyful.",
+  "characters": [
+    {
+      "name": "narrator",
+      "age_hint": "adult",
+      "gender": "female",
+      "accent": "en-GB",
+      "personality": "Austen-dry, literary, ironic yet warm, measured pace",
+      "sample_lines": [
+        "Elizabeth was too much embarrassed to say a word.",
+        "After a short pause, her companion added,"
+      ]
+    },
+    {
+      "name": "Darcy",
+      "age_hint": "late 20s",
+      "gender": "male",
+      "accent": "en-GB",
+      "personality": "proud but vulnerable, formal, restrained fervor, self-possessed but exposed in love",
+      "sample_lines": [
+        "If you will thank me, let it be for yourself alone.",
+        "My affections and wishes are unchanged.",
+        "But your family owe me nothing."
+      ]
+    },
+    {
+      "name": "Elizabeth",
+      "age_hint": "early 20s",
+      "gender": "female",
+      "accent": "en-GB",
+      "personality": "sharp, witty, self-aware, quick intelligence softened by humility",
+      "sample_lines": [
+        "I am only resolved to act in that manner, which will, in my own opinion, constitute my happiness.",
+        "You must learn some of my philosophy. Think only of the past as its remembrance gives you pleasure."
+      ]
+    }
+  ],
+  "chapters": [
+    {
+      "number": 1,
+      "title": "The Final Reconciliation (The Walk at Longbourn)",
+      "lines": [
+        {
+          "speaker": "narrator",
+          "text": "The Final Reconciliation (The Walk at Longbourn)",
+          "emotion": {"label": "formal", "intensity": 0.35, "pace": -0.15, "notes": "Chapter heading, spoken with slight gravitas."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Following Darcy's secret assistance with the Lydia/Wickham scandal, the two finally reach an understanding.",
+          "emotion": {"label": "calm", "intensity": 0.3, "pace": 0.0, "notes": "Scene-setting prose; Austen-dry delivery."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "If you will thank me,",
+          "emotion": {"label": "firm", "intensity": 0.6, "pace": -0.2, "notes": "Opening clause: quiet, deliberate, setting up a correction. He will not accept thanks under false pretences."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "he replied,",
+          "emotion": {"label": "neutral", "intensity": 0.2, "pace": 0.0, "notes": "Dialogue tag — barely inflected."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "let it be for yourself alone.",
+          "emotion": {"label": "firm", "intensity": 0.7, "pace": -0.25, "notes": "The correction lands. Weight on 'yourself alone'."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "That the wish of giving happiness to you, might add force to the other inducements which led me on, I shall not attempt to deny.",
+          "emotion": {"label": "vulnerable", "intensity": 0.65, "pace": -0.1, "notes": "A long careful concession; the grammar is formal but the admission is raw. Keep flowing; the emotion is in the care of the diction."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "But your family owe me nothing.",
+          "emotion": {"label": "resolute", "intensity": 0.75, "pace": -0.2, "notes": "A declarative firm stop. He does not want her gratitude for family reasons."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "Much as I respect them, I believe I thought only of you.",
+          "emotion": {"label": "tender", "intensity": 0.9, "pace": -0.3, "notes": "The confession underneath the formal diction. Slow to the floor on 'only of you'. This is the emotional peak of Darcy's first speech."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Elizabeth was too much embarrassed to say a word.",
+          "emotion": {"label": "dry", "intensity": 0.4, "pace": -0.05, "notes": "Austen's narrative distance."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "After a short pause, her companion added,",
+          "emotion": {"label": "dry", "intensity": 0.35, "pace": -0.05, "notes": "'her companion' is a wry deferral of Darcy's name; small held breath before he resumes."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "You are too generous to trifle with me.",
+          "emotion": {"label": "vulnerable", "intensity": 0.8, "pace": -0.2, "notes": "He opens raw — acknowledging he'd be devastated by a cruel tease. Weight on 'trifle'."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "If your feelings are still what they were last April, tell me so at once.",
+          "emotion": {"label": "resolute", "intensity": 0.85, "pace": -0.15, "notes": "Direct reference to the Hunsford rejection. He needs to know. Slight urgency but held."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "My affections and wishes are unchanged,",
+          "emotion": {"label": "tender", "intensity": 0.9, "pace": -0.3, "notes": "The avowal. Slow, each word weighted. This is the line."}
+        },
+        {
+          "speaker": "Darcy",
+          "text": "but one word from you will silence me on this subject for ever.",
+          "emotion": {"label": "vulnerable", "intensity": 0.85, "pace": -0.25, "notes": "Offering her the escape route, even as he lays himself bare. 'for ever' must land gently, finally."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "Elizabeth, feeling all the more than common awkwardness and anxiety of his situation, now forced herself to speak; and immediately, though not very fluently, gave him to understand, that her sentiments had undergone so material a change...",
+          "emotion": {"label": "tender", "intensity": 0.6, "pace": -0.15, "notes": "Free indirect — narrator reports Elizabeth's reply. Build through the clause, trail off on the ellipsis — a held breath."}
+        },
+        {
+          "speaker": "narrator",
+          "text": "as to make her receive with gratitude and pleasure, his present assurances.",
+          "emotion": {"label": "warm", "intensity": 0.7, "pace": -0.2, "notes": "The release. Gentle finality — the long arc of the novel closing. 'gratitude and pleasure' should land warmly."}
+        }
+      ]
+    }
+  ]
+}

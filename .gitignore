@@ -21,6 +21,10 @@ samples/**
 voice_samples/**
 !voice_samples/.gitkeep
 !voice_samples/SOURCES.md
+# Reference clips used by Chatterbox are tracked — they're small (8-10 s
+# each, ~400 KB) and without them the repo can't reproduce the hybrid
+# Gatsby sample. Sources documented in SOURCES.md.
+!voice_samples/*.wav
 
 # cast*.json is tracked authored configuration. A stray script.json at the
 # repo root (not inside build*/) stays ignored as a safety net — the
@@ -28,5 +32,3 @@ voice_samples/**
 # !build*/script.json override implied by the allow-list above.
 /script.json
 
-# Story-specific opt-outs (see commit history for rationale per path).
-stories/salt-and-rust.md

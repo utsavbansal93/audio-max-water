@@ -45,10 +45,12 @@ Approximate loaded-in-memory costs (April 2026):
 
 Rules:
 
-1. **Never run more than one render process at a time.** A hybrid render already co-loads Kokoro + Chatterbox + Whisper. A second concurrent process doubles the footprint and trips swap.
-2. **Do not background long-running Python processes without a reason.** `run_in_background: true` for a Chatterbox render leaves 2+ GB resident for the duration — easy to forget while starting new work.
-3. **Kill Python processes between sessions.** `pgrep -f python3.12` before opening a new Claude Code session. Orphan processes from previous iterations accumulate.
-4. **When memory is tight, split bench into render + qa.** The default `pipeline.bench` pipeline does render → QA with everything still loaded. Running `pipeline.render` and `pipeline.qa` as separate processes lets each release its models on exit.
+1. **Render concurrency is per-backend, not global.** Kokoro-only renders (either `kokoro` or `mlx-kokoro`) can run up to 3 concurrent — each is ~0.5 GB. Any Chatterbox (or hybrid) render must be the only render process — Chatterbox is ~2.5 GB peak and leaves less than half of the 16 GB budget. Whisper QA adds ~0.3 GB to whatever else is running; prefer splitting `pipeline.render` and `pipeline.qa` into separate processes when memory is tight so each releases its models on exit.
+2. **The memory watchdog (`pipeline/_memory.py::require_free`) runs at the top of every render/bench `main()`.** If free RAM is below 4 GB at start, the process refuses with a clear error. This catches "I forgot a render was running" cases automatically. You shouldn't need to think about it during normal work — only when it fires.
+3. **Do not background long-running Python processes without a reason.** `run_in_background: true` for a Chatterbox render leaves 2+ GB resident for the duration — easy to forget while starting new work.
+4. **Kill Python processes between sessions.** `pgrep -f python3.12` before opening a new Claude Code session. Orphan processes from previous iterations accumulate.
 5. **Chatterbox is the expensive one.** Kokoro-only renders have no memory concern on 16 GB. Chatterbox-heavy stories (many character lines) are where budget matters.
 
 If the system memory starts swapping during a render, stop — let the swapper settle, split the work into smaller processes, resume. Don't power through.
+
+These rules are conservative. Once the supervisor pattern (see `BACKLOG.md`) accumulates real RSS stats across many renders, we can relax the rule empirically.

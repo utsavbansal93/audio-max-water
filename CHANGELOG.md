@@ -4,6 +4,23 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Added
+- `pipeline/_memory.py` — memory watchdog module. `require_free(min_gb, backend=...)` checks `psutil.virtual_memory().available` and refuses to start a render/bench with a helpful error when free RAM is below threshold. Catches the "forgot a render was running" case automatically.
+- `pipeline/render.py::main()` and `pipeline/bench.py::main()` now call `require_free(4.0)` and `require_free(4.5)` respectively before any model load.
+- `psutil>=7.0` added to `pyproject.toml` base dependencies.
+- `examples/` directory with three curated `.m4b` samples (P&P Reconciliation, P&P Hunsford, Gatsby West Egg hybrid) and a README explaining what each demonstrates. Linked from the main README's new "Try before you clone" section.
+- `BACKLOG.md` entries: supervisor/worker pattern for bulk rendering (with explicit memory-logging requirement), and a companion entry to review those logs and relax the concurrency rules empirically.
+- `voice_samples/gatsby_ref.wav` and `voice_samples/daisy_ref.wav` now tracked in git (added `!voice_samples/*.wav` to `.gitignore`). They were overlooked during the hybrid-Chatterbox branch merge because the original gitignore pattern blocked them; without them the repo could not reproduce the hybrid sample.
+
+### Changed
+- `CLAUDE.md` rule #1 refined: concurrency is per-backend, not global. Kokoro-only renders can run up to 3 concurrent; any Chatterbox render must be the only one. Whisper QA accounted for explicitly. Rule #2 documents the new watchdog.
+
+### Removed
+- *Salt and Rust* artifacts: `stories/salt-and-rust.md`, `cast_salt_and_rust.json`, `build_salt_and_rust/` (32 MB), `samples/cast_salt_and_rust/`, `out/salt_and_rust.m4b/`. Per user directive during cleanup; the project-story narrative in `STORY.md` retains the retrospective record, and `DECISIONS.md` entries #0012–#0015 stay as documentation of the casting reasoning, but the artifacts themselves are gone.
+- Old audition sample directories: `samples/cast/` (P&P auditions from early casting iterations), `samples/gatsby_audition/` (Gatsby voice-selection auditions). Superseded once casts were approved.
+- Transitive Chatterbox demo-UI packages uninstalled from venv: `pre-commit`, `ffmpy`, `gradio`, `gradio_client`, `fastapi`, `uvicorn`, `starlette`, `safehttpx`, `aiofiles`, `tomlkit`, `orjson`, `semantic-version`, `groovy`, `python-multipart`, `pandas`. Tried removing `onnx` and reverted — `s3tokenizer` needs it. Total venv shrinkage: ~100 MB (1.7 GB → 1.6 GB).
+- `.gitignore` entry `stories/salt-and-rust.md` (file is deleted).
+
 ### Fixed
 - `pipeline/package.py` — two metadata bugs: (1) `--script` defaulted to `build/script.json` regardless of `--build`, causing chapter titles to bleed from whichever story last used the default build dir; default is now `<build>/script.json` so `--build` is the single required arg. (2) `ffmetadata` never wrote `artist=`, producing "Unknown author" in all players; `--author` flag added and wired into the metadata block.
 

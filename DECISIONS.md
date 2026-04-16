@@ -330,3 +330,26 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 - Small quality cost for extreme pace values (atempo introduces mild artifacts > 15% stretch), but our pace range is ±30% so it's within atempo's clean zone.
 - One extra ffmpeg call per non-default-pace Chatterbox line — negligible overhead vs Chatterbox's diffusion sampling cost.
 - Keeps engine-specific machinery inside `chatterbox_backend.py` — pipeline stays engine-agnostic.
+
+---
+
+## 0020 · 2026-04-16 · Per-backend memory budget + `require_free` watchdog (not global serialization)
+
+**Context.** The 20 GB SSD-swap incident during a hybrid render forced a memory rule. First-pass rule was "never run more than one render process at a time." User pushed back: over-restrictive. Three Kokoro renders together consume ~1.5 GB and are trivially safe; the real problem was stacking Chatterbox + Whisper + MLX-Kokoro in one process while browsers and OS ate the rest of 16 GB.
+
+**Options considered.**
+- **Keep "one render at a time" globally.** Simple, crisp, over-restrictive for Kokoro work. User rejected.
+- **Per-backend budget in docs only (no enforcement).** Describe Kokoro = up to 3, Chatterbox = exactly 1. Easy to document; relies entirely on human discipline.
+- **Enforced per-backend via process coordination** (pid/lockfile tracking). More robust but requires tracking "which render is running," handling zombies, coordinating across terminal tabs. Infrastructure tax.
+- **Free-RAM watchdog at render startup.** Check `psutil.virtual_memory().available` before any model loads; refuse with a clear error if below threshold. No cross-process coordination — just look at what the machine actually has right now.
+- **Full supervisor/worker pattern.** One long-lived process holds models, workers dispatch requests. The correct long-term shape but ~1–2 sessions of infrastructure work to build and debug; premature for current one-scene-at-a-time workflow.
+
+**Decision.** Combine the documentation option and the free-RAM watchdog. `CLAUDE.md` rule #1 now describes the per-backend budget (Kokoro ≤ 3 concurrent, Chatterbox = 1). `pipeline/_memory.py::require_free(min_gb, backend=...)` runs at the top of `pipeline/render.py::main()` and `pipeline/bench.py::main()`; refuses to start if free RAM is below 4 GB (render) or 4.5 GB (bench, which also loads Whisper). Supervisor pattern filed in `BACKLOG.md` as the right long-term direction with an explicit requirement to log per-request RSS stats so we can empirically relax the rule once data exists.
+
+**Consequences.**
+- Catches the common failure mode (forgot a render was running, started another) without needing cross-process machinery. The watchdog message points at the fix (close apps / kill python procs / smaller scope).
+- Doesn't catch mid-render memory growth — if a render pushes into swap partway through, current behavior stands (macOS swaps; painful but not catastrophic). Acceptable per Phase 5 of the plan.
+- The 4.0 / 4.5 GB thresholds are slightly conservative (OS + single model set typically needs 3 GB). Set a little high to cover the case where other apps grow during the render. Can be tuned down once the supervisor logs real distribution data.
+- Introduces a runtime dep on `psutil>=7.0`; small (~1 MB installed), no native compile needed.
+
+**Retrospective lesson.** *Prefer observation-based enforcement over static rules where cheap.* The watchdog checks actual conditions at runtime instead of asserting what should be true in general. That's both more robust (catches situations the rule-author didn't imagine) and self-documenting (the error message teaches the rule). When this kind of instrument is cheap to build — here, 50 LOC and one library — prefer it to rules humans have to remember.

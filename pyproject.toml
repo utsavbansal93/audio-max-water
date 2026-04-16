@@ -10,9 +10,10 @@ requires-python = ">=3.12"
 dependencies = [
   "kokoro>=0.9",
   "soundfile>=0.13",
-  "numpy>=2.0",
+  "numpy>=1.26",              # relaxed from 2.0 after chatterbox-tts downgrade to 1.26
   "pydantic>=2.10",
   "pyyaml>=6.0",
+  "psutil>=7.0",              # memory watchdog in pipeline/_memory.py
 ]
 
 [project.optional-dependencies]

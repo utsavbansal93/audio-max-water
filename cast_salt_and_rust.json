@@ -1,8 +1,0 @@
-{
-  "backend": "mlx-kokoro",
-  "mapping": {
-    "narrator": "af_aoede",
-    "Furiosa": "af_nicole",
-    "Mariner": "am_michael"
-  }
-}

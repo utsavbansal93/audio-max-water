@@ -70,6 +70,13 @@ def main() -> None:
     ap.add_argument("--chapter", type=int, default=1)
     args = ap.parse_args()
 
+    # Memory watchdog: bench loads backends + Whisper, slightly higher floor
+    # than render alone. See pipeline/_memory.py and CLAUDE.md.
+    from pipeline._memory import require_free
+    import yaml
+    _cfg = yaml.safe_load((REPO / "config.yaml").read_text())
+    require_free(min_gb=4.5, backend=_cfg.get("backend"))
+
     script = ScriptModel.model_validate(json.loads(args.script.read_text()))
     chapter = next(c for c in script.chapters if c.number == args.chapter)
     n_lines = len(chapter.lines)

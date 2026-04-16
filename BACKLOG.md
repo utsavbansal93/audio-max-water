@@ -30,6 +30,31 @@ Ideas, experiments, and follow-ups that are worth doing but not now. Each entry 
 
 ## Pipeline ergonomics
 
+### Supervisor/worker pattern for bulk rendering
+
+**What.** One long-lived Python process loads each backend (Kokoro, Chatterbox, Whisper) exactly once at startup and exposes a request queue; the existing `pipeline.render`, `pipeline.qa`, `pipeline.bench` CLIs become thin clients that connect to the supervisor over a Unix socket. N chapters rendered in one supervisor lifetime = 1× model load cost instead of N×. Concurrency is budgeted explicitly at the supervisor ("one Chatterbox slot, three Kokoro slots, one Whisper slot") with graceful back-pressure when the budget is full.
+
+**Project-specific requirement (non-negotiable for this backlog entry).** *The supervisor must log per-request memory stats* to a rotating file: peak RSS during synthesis, RSS before/after each request, queue depth, concurrent-request count, backend, request duration. One line of JSON per request so the log is easy to `jq` / load into pandas. This instrumentation is the prerequisite for the companion entry below.
+
+**Why deferred.** Current workflow is one scene at a time for listening + iterating — throughput isn't bottlenecked yet. The supervisor earns its complexity when rendering multi-chapter works or serving concurrent submissions from a future web UI.
+
+**When to revisit.** First full-novel render; or when someone wants to queue multiple stories; or when startup latency (model loading per invocation) becomes a bottleneck versus actual synthesis time.
+
+**What the work looks like.** `pipeline/supervisor.py` + a JSON-over-Unix-domain-socket protocol, thin-client refactor of the existing CLIs, logging infrastructure, plus a start/stop/status utility. Moderately-sized — a few sessions of work.
+
+### Review memory-usage logs; relax the concurrency rule empirically
+
+**What.** Once the supervisor (entry above) has accumulated logged per-request RSS data from real renders across diverse stories, analyze the distribution per backend. Questions to answer:
+- What's the actual 95th-percentile peak RSS for Chatterbox across our scripts? (Current conservative estimate: 2.5 GB. If the real number is 1.8 GB, we have headroom to allow concurrent Kokoro + Chatterbox.)
+- Does peak RSS correlate with text length, intensity, or pace? If yes, the concurrency rule can be request-size-aware.
+- Are there line patterns (long sentences, certain intensity ranges) that reliably cause RSS spikes? Flag them for mitigation.
+
+The output is a revision to `CLAUDE.md`'s per-backend budget and/or to the watchdog thresholds in `pipeline/_memory.py`. Goal: let the system tell us empirically when we can safely relax constraints, rather than guessing.
+
+**Why deferred.** Depends entirely on the supervisor entry existing *and* having run enough to produce a meaningful dataset (probably weeks of regular use, not days).
+
+**Parent.** Supervisor/worker pattern (above).
+
 ### LLM-driven casting (replace the tag heuristic in `pipeline/cast.py`)
 
 **What.** Opus reads the script's `characters` and `book_context` and picks a voice with reasoning, rather than our trait-keyword scoring in `_score()`. Output would include per-character justification for DECISIONS logging.

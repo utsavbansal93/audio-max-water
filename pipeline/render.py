@@ -292,6 +292,13 @@ def main() -> None:
     ap.add_argument("--backend", default=None, help="Override cast.json backend")
     ap.add_argument("--build",   default="build",             type=Path)
     args = ap.parse_args()
+
+    # Memory watchdog: refuse to start if the machine can't safely hold the
+    # models this render will load. See pipeline/_memory.py and CLAUDE.md.
+    from pipeline._memory import require_free
+    _cfg_backend = args.backend or CFG.get("backend")
+    require_free(min_gb=4.0, backend=_cfg_backend)
+
     render_all(args.script, args.cast, args.backend, args.build)
 
 

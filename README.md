@@ -30,6 +30,16 @@ The first run downloads the Kokoro-82M weights (~300 MB) via Hugging Face.
 
 ---
 
+## Try before you clone
+
+Three short rendered samples live in [`examples/`](examples/). Drop any of these into Apple Books or any `.m4b` player to hear what the pipeline produces with the current defaults:
+
+- **`pp_reconciliation_sample.m4b`** (82 s) — Jane Austen's *Pride and Prejudice*, Chapter 58. All-Kokoro, British cast. Demonstrates the default zero-touch path.
+- **`pp_hunsford_sample.m4b`** (72 s) — Chapter 34 of the same book. Different scene, same voices — shows cross-scene voice consistency via `cast.json`.
+- **`gatsby_west_egg_sample.m4b`** (125 s) — Fitzgerald's *Great Gatsby*, Chapter 5. **Hybrid engine**: Kokoro narrator + Chatterbox characters voice-cloned from a [LibriVox Dramatic Reading](https://librivox.org/the-great-gatsby-version-5-by-f-scott-fitzgerald/). See [`examples/README.md`](examples/README.md) for what to listen for.
+
+---
+
 ## Source formats
 
 Two ways to write a story. Both pass the same faithful-wording contract (see `DECISIONS.md`).
