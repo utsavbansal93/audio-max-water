@@ -33,7 +33,21 @@
                  {% if settings.provider == "mcp" %}checked{% endif %} />
           <div>
             <strong>Use my Claude app</strong>
-            <p class="caption muted">Route the one LLM call through your connected Claude Code / Claude Desktop via MCP sampling. (Requires running <code>python -m pipeline.serve --mode both</code> and configuring Claude to connect.)</p>
+            <p class="caption muted">
+              Route the one LLM call through your connected Claude Code
+              (or Claude Desktop) via MCP sampling. No API key needed —
+              your Claude subscription does the work.
+            </p>
+            <p class="caption muted">
+              <strong>Setup, once:</strong> run
+              <code>python -m pipeline.serve --mode combined</code>,
+              then add this to <code>~/.claude/settings.json</code>:
+            </p>
+            <pre class="inline-code">{
+  "mcpServers": {
+    "audio-max-water": {"url": "http://localhost:8765/mcp/sse"}
+  }
+}</pre>
           </div>
         </label>
       </div>

@@ -85,7 +85,11 @@ Landed as `pipeline/parse.py` + `llm/` package in the Phase 1 orchestrator. Non-
 
 Landed as `ui/` + `pipeline/serve.py` + `pipeline/mcp_server.py`. See DECISIONS #0026 (UI stack), #0027 (backend pool), #0028 (separate invocations), #0029 (progress callback). Web UI at `http://127.0.0.1:8765` supports Anthropic + Gemini API keys; MCP server at `python -m pipeline.serve --mode mcp` exposes pipeline tools for Claude Code / Claude Desktop. The "Use my Claude app" (MCP sampling) provider option is a stub until combined-mode lands — see below.
 
-### MCP sampling — combined UI + MCP server mode
+### ~~MCP sampling — combined UI + MCP server mode~~ — SHIPPED
+
+Landed in Phase 2.4 as `--mode combined` on `pipeline.serve`. See DECISIONS #0034. Users with Claude Code configured via HTTP/SSE MCP get no-API-key parse. Hard-fails with clear setup guidance when no client is connected.
+
+### MCP sampling — combined UI + MCP server mode (original entry below, preserved for context)
 
 **What.** Run the UI and the MCP server in one Python process so that, when a Claude client connects to the MCP server, the UI's parse step can use `sampling/createMessage` to route LLM generation through Claude instead of requiring an API key. This is the third LLM provider option in the UI Settings screen ("Use my Claude app"), currently stubbed with a `ConfigurationError`.
 

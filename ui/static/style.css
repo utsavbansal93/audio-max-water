@@ -141,6 +141,17 @@ code {
   border-radius: 4px;
 }
 
+pre.inline-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-chip);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
 .caption { font-size: 13px; line-height: 1.4; }
 .muted { color: var(--text-muted); }
 

@@ -543,6 +543,39 @@ The three-variant sequence on this one feature:
 
 Three variants of one conceptually simple feature. The lesson isn't "the feature is harder than it looks" — it's "the feature has three real user pathways, and testing one path silently deferred the bugs in the others." Exhaustive path enumeration on UX-adjacent features beats incremental fix-as-reported.
 
+---
+
+## 2026-04-16 · Combined mode — wiring "Use my Claude app"
+
+**What happened.** Phase 2 shipped with `provider = "mcp"` as a default and a hard-coded `ConfigurationError` stub behind it — DECISIONS #0028 scope-cut, explicit tradeoff. Phase 2.2 bumped the default to `mcp`. The user uploaded a book, saw the stub message, and asked me to actually build it. The scope-cut came due. That's how scope-cuts are supposed to work.
+
+**What I chose, and why.**
+
+*HTTP/SSE transport, not stdio.* stdio is the native Claude pattern (Claude spawns the server as a subprocess), but it forecloses the thing the user wanted: a single shared process where both the web UI and an MCP server live, so sampling through a connected client can route to the parse step. HTTP/SSE is the transport that makes this work — Claude Code connects *to* the running server instead of spawning it.
+
+*Module-global session capture.* The MCP Python SDK hides the `ServerSession` object inside `Server.run()` with no public accessor — I checked. The sanctioned pattern from the SDK's own docs is to wrap `server.run()`'s body and capture the session into outer scope before entering the message pump. My `_run_with_session_capture()` in `ui/mcp_mount.py` mirrors `Server.run()` exactly, just with one extra module-global set/clear around the loop. ~15 lines of SDK-internals-friendly code.
+
+*Event-loop bridge.* The parse worker lives on a background thread (from `ui/app.py::_start_parse` — already threaded because the existing pipeline stages are sync and long-running). `ServerSession.create_message` is async, and it must run on uvicorn's loop, not in the worker. I capture the loop on first SSE connect into another module-global, and the sampling provider uses `asyncio.run_coroutine_threadsafe(coro, loop)` to bridge. Standard CPython pattern, safe across threads, returns a concurrent.futures.Future that `.result(timeout=180)` makes sync.
+
+*Hard-fail, no silent fallback.* The user was explicit: fail visibly and point at the fix, rather than silently switching to Anthropic/Gemini based on env vars. I implemented it as `ConfigurationError` re-raises in three branches (not-attached, no-session, McpError/disconnect) — all flowing through the existing stage-error path in the UI so the user sees the message inline on the job.
+
+*Launcher-to-app wiring via env var.* Uvicorn imports `"ui.app:app"` — there's no constructor to pass flags through. I could have split into two FastAPI apps with different `lifespan`s, but that doubles the surface. An `AMW_MCP_COMBINED=1` env var set by the launcher before `uvicorn.run()` is the simplest thing that works. The `lifespan()` reads the env on startup.
+
+**The one subtle thing.** `Server.run()` under the hood spawns message handlers in an anyio task group, then in `finally:` cancels the task group when the transport closes. If I'd written `_run_with_session_capture` naively (just iterate messages and await each one) I'd have a subtly different lifecycle — specifically, handlers would block the SSE read loop rather than running concurrently. I copy-pasted the exact structure from `Server.run()` source (verified with `inspect.getsource`) so the behavior matches, including cancellation on transport close. This is the kind of thing where mirroring-not-rewriting is the right call; I don't own the semantics, the SDK does.
+
+**What Phase 3 looks like.** This closes the last Phase 2 scope-cut. The `--mode combined` launcher is the default anyone using the "Use my Claude app" provider will want. From here the natural next work is:
+- The URL ingestor (paste-a-link) from Phase 2.1 backlog.
+- PDF / DOCX cover extraction with user-confirm UX (Phase 2.2 backlog).
+- Placeholder cover generation with square-crop (Phase 2.2 backlog).
+- Minor-character voice defaults (Phase 2 backlog).
+- Supervisor pattern for persistent backend processes (older backlog).
+
+**Concept bucket (added).**
+- *Scope-cuts with signposts beat silent gaps.* The Phase 2.2 stub raised a `ConfigurationError` with the exact fix string including the config JSON and launch command. When the user hit the stub, the next turn was "wire this up" — not "explain what's broken" + "design an approach" + "wire up." The signpost saved a full clarification round.
+- *Mirror, don't rewrite, when you need library internals.* The SDK's `Server.run()` body has specific semantics (task group, cancellation, anyio) I don't want to reinvent. Reading its source with `inspect.getsource` and copying the structure exactly — just inserting my one module-global capture around the message loop — is safer than my guess at how the lifecycle should work.
+- *Env var as launcher-to-app flag is crude but right.* FastAPI's `lifespan` is the hook for startup work; uvicorn is the process-owner of the `ui.app:app` import. Passing a flag from the launcher through uvicorn to the app has no clean built-in path. An env var is the narrowest surface that works without inventing new machinery; `AMW_MCP_COMBINED=1` is a string on one code path, not a new config-loading system.
+- *Single loop, single owner for async bridging.* Multiple event loops in one process is a debugging nightmare. Capture uvicorn's loop once, use it for every cross-thread async call, leave the thread's own loop alone. The bridge is `run_coroutine_threadsafe` plus `Future.result(timeout=...)` — the correct idiomatic pattern.
+
 **Concept bucket (added).**
 - *Match your test inputs to the real user's tools.* A user's zip wasn't made by Python. It was made by Finder or Safari's drag-drop zipping. Different tools produce different archive shapes. A sniff tested against Python-built zips passes; against Finder-built zips fails. If the user workflow involves a specific tool, put that tool in the test loop.
 - *Unwrap on the server beats ask-user-to-re-zip.* Telling the user "re-zip without the wrapper" is a cold UX. Unwrapping on the server is ~20 lines of stdlib zipfile — one-time cost, zero user-facing explanation. Prefer the transparent fix when it's cheap.

@@ -17,6 +17,14 @@ build/_ui_*/
 build/_ui_uploads/
 # Persistent job records (user-specific state, not code).
 build/_jobs/
+# Per-story build dirs from ad-hoc CLI runs (pipeline.run). The source.md
+# + source_cover.* + run.log here are regenerable. We only track the
+# canonical build dirs that have authored script.json (build/, build_*/).
+build/*/source.md
+build/*/source.md.tmp
+build/*/source_cover.*
+build/*/run.log
+build/*/cast_samples/
 !build/.gitkeep
 
 # setuptools metadata for editable installs — regenerated on every pip install -e .

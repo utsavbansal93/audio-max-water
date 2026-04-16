@@ -1,12 +1,16 @@
 """MCP server — exposes the audiobook pipeline as tools for Claude Code / Desktop.
 
-Run via: `python -m pipeline.serve --mode mcp`
+Two transports:
+  - stdio (`python -m pipeline.serve --mode mcp`): Claude spawns this as a
+    subprocess and drives JSON-RPC over stdin/stdout. Native Claude-Code
+    + Claude-Desktop pattern for local tool servers.
+  - HTTP/SSE, mounted into the FastAPI web UI (`--mode combined`). The UI's
+    "Use my Claude app" provider uses the same connected session to route
+    parse-step LLM calls via `sampling/createMessage` — see
+    `ui/mcp_mount.py` + `llm/mcp_sampling_provider.py`.
 
-Transport: stdio. The MCP client (Claude Code / Desktop) spawns this as
-a subprocess and drives it via JSON-RPC on stdin/stdout. This is the
-native pattern — the user configures Claude's MCP settings to point
-at this command, then asks Claude to "convert story.pdf to audiobook"
-and Claude picks the right tool.
+`build_server()` is the single source of truth for tool registration;
+both transports consume it. Adding / changing a tool = one edit here.
 
 Tools exposed:
   - run_pipeline          : one-shot end-to-end render
@@ -14,16 +18,11 @@ Tools exposed:
   - audition_voice        : synthesize a short sample clip
   - parse_only            : ingest + parse, return the ScriptModel JSON
   - supported_formats     : report input / output formats
-
-Design note: we keep this thin and side-effect-oriented. Tools return
-file paths / structured JSON; Claude decides what to do with the
-output. No chatter, no implicit playback.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -40,10 +39,14 @@ def _load_env() -> None:
     load_default_env()
 
 
-def run_stdio() -> None:
-    """Entry point from `pipeline.serve --mode mcp`."""
+def build_server():
+    """Construct the MCP Server with all pipeline tools registered.
+
+    Transport-agnostic — callers (stdio entry point, SSE mount) use the
+    returned `Server` instance with whatever read/write streams they
+    have.
+    """
     try:
-        import mcp.server.stdio  # type: ignore[import-not-found]
         from mcp.server import Server  # type: ignore[import-not-found]
         from mcp.types import TextContent, Tool  # type: ignore[import-not-found]
     except ImportError as e:
@@ -55,7 +58,6 @@ def run_stdio() -> None:
             required=True,
         ) from e
 
-    _load_env()
     server = Server("audio-max-water")
 
     @server.list_tools()
@@ -191,6 +193,7 @@ def run_stdio() -> None:
             )]
 
     async def _tool_run_pipeline(args: dict) -> list[TextContent]:
+        from mcp.types import TextContent  # noqa: F811
         from pipeline.run import run as run_pipeline
         input_path = Path(args["input_path"]).expanduser().resolve()
         if not input_path.exists():
@@ -217,6 +220,7 @@ def run_stdio() -> None:
 
     async def _tool_parse_only(args: dict) -> list[TextContent]:
         import json
+        from mcp.types import TextContent  # noqa: F811
         from pipeline.parse import parse_to_disk
         input_path = Path(args["input_path"]).expanduser().resolve()
         if not input_path.exists():
@@ -241,6 +245,7 @@ def run_stdio() -> None:
 
     async def _tool_list_voices(args: dict) -> list[TextContent]:
         import json
+        from mcp.types import TextContent  # noqa: F811
         backend_name = args.get("backend", "mlx-kokoro")
         from tts import get_backend
         b = await asyncio.to_thread(get_backend, backend_name)
@@ -261,6 +266,7 @@ def run_stdio() -> None:
         ))]
 
     async def _tool_audition_voice(args: dict) -> list[TextContent]:
+        from mcp.types import TextContent  # noqa: F811
         from ui.services.audition import audition
         text = args.get("text") or "I think I shall take the long way home today."
         path = await asyncio.to_thread(
@@ -272,10 +278,30 @@ def run_stdio() -> None:
         )]
 
     def _tool_supported_formats() -> list[TextContent]:
+        from mcp.types import TextContent  # noqa: F811
         return [TextContent(type="text", text=(
             "Inputs:  .txt, .md, .docx, .epub, .pdf\n"
             "Outputs: .m4b (audiobook), .epub (ebook with synced audio)"
         ))]
+
+    return server
+
+
+def run_stdio() -> None:
+    """Entry point from `pipeline.serve --mode mcp`. Uses stdio transport."""
+    try:
+        import mcp.server.stdio  # type: ignore[import-not-found]
+    except ImportError as e:
+        from pipeline._errors import MissingDependency
+        raise MissingDependency(
+            package="mcp",
+            feature="MCP server",
+            install=".venv/bin/pip install -e '.[ui]'",
+            required=True,
+        ) from e
+
+    _load_env()
+    server = build_server()
 
     async def main():
         async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):

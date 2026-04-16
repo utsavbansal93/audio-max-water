@@ -99,7 +99,31 @@ Start the local web UI instead of (or alongside) the CLI:
 .venv/bin/python -m pipeline.serve --mode ui        # opens http://127.0.0.1:8765
 # or, for Claude Code integration via MCP (stdio):
 .venv/bin/python -m pipeline.serve --mode mcp
+# or, to use your connected Claude Code as the LLM (no API key):
+.venv/bin/python -m pipeline.serve --mode combined
 ```
+
+### Use Claude as the LLM — no API key
+
+If you have Claude Code (or Claude Desktop), run the server in **combined mode** and configure your Claude client to connect over HTTP/SSE. The pipeline's one LLM call (parsing the source into a structured script) routes through your connected client via MCP sampling. No Anthropic / Gemini API key required — your Claude subscription does the work.
+
+```bash
+.venv/bin/python -m pipeline.serve --mode combined
+```
+
+Then add to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "audio-max-water": {"url": "http://localhost:8765/mcp/sse"}
+  }
+}
+```
+
+In the web UI, pick **Settings → Use my Claude app**. Upload a book. The parse stage asks your connected Claude client for the script; nothing else changes.
+
+If no client is connected when you upload, the UI shows a clear error pointing at this setup. No silent fallback — switch the provider to Anthropic / Gemini in Settings if you want API-key mode instead.
 
 The UI's five-screen flow mirrors the CLI: **Upload → Voices → Options → Rendering → Done**. Settings lives at `/settings` (provider + API key + defaults). History lives at `/history` — every job is persisted to `build/_jobs/<job_id>.json` so it survives server restarts. Failed or interrupted jobs get a **Resume** action that restarts from the last completed stage (parse / cast / render are all individually cacheable). Progress streams via Server-Sent Events — each pipeline stage shows as a pill (pending / active / done / error) with a live sub-progress bar during render.
 

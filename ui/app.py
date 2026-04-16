@@ -66,6 +66,18 @@ async def lifespan(app: FastAPI):
     current_settings.apply_to_env()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Combined-mode: pipeline.serve sets AMW_MCP_COMBINED=1 before
+    # uvicorn boots us. Mount the MCP SSE routes so the "Use my Claude
+    # app" provider becomes usable.
+    import os as _os
+    if _os.environ.get("AMW_MCP_COMBINED") == "1":
+        from ui.mcp_mount import attach as _mcp_attach
+        try:
+            _mcp_attach(app)
+            log.info("combined mode: MCP SSE routes mounted")
+        except Exception as e:
+            log.exception("failed to mount MCP SSE routes: %s", e)
+
     # Jobs left in a transient status by a previous server lifecycle
     # (their worker thread died when the server stopped). Mark them
     # "error" + resumable so the user can pick up where they left off.

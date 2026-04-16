@@ -653,3 +653,32 @@ My Phase 2.2 smoke test used `zipfile.ZipFile.write(p, p.relative_to(src))` whic
 - Error message for genuine non-EPUB zips updated to tell both the "root-level mimetype" and "wrapped-in-folder" accepted shapes explicitly, so a user whose zip is neither gets a pointer to what we look for.
 
 **Retrospective lesson.** *Test with what the user has, not what you can construct.* My earlier smoke test zipped the folder's **contents**; the user's workflow zips the folder itself. Close, but the difference is load-bearing. When testing a user-facing path, the test fixture needs to come from the same source (drag-drop, Finder, a specific OS tool) the user actually uses — not a convenient programmatic stand-in. The bug was visible from iteration 0 if I had dragged the folder into my own browser instead of curling a Python-built zip.
+
+---
+
+## 0034 · 2026-04-16 · Combined mode — UI + MCP in one process, HTTP/SSE transport
+
+**Context.** DECISIONS #0028 deferred combined mode for Phase 2. The user wanted it now. The feature: when a user has Claude Code connected to the local server, the pipeline's one LLM call (source → script) routes through the client via MCP `sampling/createMessage` instead of hitting Anthropic/Gemini directly. No API key required.
+
+**Options considered.**
+- **stdio transport only** — Claude spawns the MCP server as a subprocess. Fundamentally incompatible with the UI sharing state with the MCP server; two processes, two LLM paths. Rejected.
+- **Streamable HTTP (MCP 2025-06-18 spec)** — newer transport, better for remote servers. Claude Code's HTTP support for it is uneven in practice (April 2026). Overkill for a localhost-only tool.
+- **HTTP/SSE transport (MCP 2024-11-05 spec)** — the widely-deployed HTTP option. `SseServerTransport` in the Python SDK is a pair of ASGI callables that mount cleanly onto FastAPI. Chosen.
+
+**Decision.** Third mode on `pipeline/serve.py`: `--mode combined`. Uvicorn + FastAPI + mounted MCP SSE routes + session capture in a module global + event-loop bridge from the parse worker thread. `pipeline/mcp_server.py::build_server()` factored out of the stdio entry point so both transports share one tool definition.
+
+**Implementation subtleties.**
+- *Session capture.* `Server.run()` creates its `ServerSession` internally. The SDK has no public registry. We replicate `Server.run()`'s body (~15 lines) in `ui/mcp_mount.py::_run_with_session_capture`, stashing the session into a thread-safe module global before entering the message-pump loop, clearing it on exit. Read via `get_current_session()`.
+- *Event-loop bridge.* The parse worker runs on a background thread spun up by `ui/app.py::_start_parse`. `ServerSession.create_message` is async; it must be driven from the uvicorn event loop. We capture the loop on first `/mcp/sse` connection via `get_event_loop()` and use `asyncio.run_coroutine_threadsafe(coro, loop)` with a 180-second timeout from the sync `MCPSamplingProvider.complete()`. Single loop, single owner — stays consistent with uvicorn's.
+- *Launcher-to-app wiring.* Uvicorn imports the app via `"ui.app:app"` — we can't pass constructor kwargs. Solution: `pipeline.serve --mode combined` sets `AMW_MCP_COMBINED=1` in `os.environ` before calling `uvicorn.run()`; `ui.app.lifespan` checks the env var and calls `ui.mcp_mount.attach(app)`. Simple, uses only things already in the environment chain.
+
+**Hard-fail vs fallback.** User's explicit choice: hard-fail when no client is connected, with inline instructions to either configure Claude Code or switch provider. The alternative (silent fallback to Anthropic/Gemini based on env vars) risked a user being confused about which provider actually ran the render. The user preferred visible control over convenient magic. Implemented accordingly: `MCPSamplingProvider.complete` raises `ConfigurationError` (already wired through `ui/app.py::_start_parse` to render as a stage error with the full fix string) in three conditions: not-attached (wrong mode), no session (no client connected), client disconnected mid-call.
+
+**Consequences.**
+- "Use my Claude app" now actually works — the user gets no-API-key operation with a one-time `~/.claude/settings.json` edit + `--mode combined` launch.
+- The Phase 2.2 `provider = "mcp"` default is finally paired with a working implementation.
+- Three launcher modes coexist (`ui`, `mcp`, `combined`). No breaking changes; users on `ui` or `mcp` don't notice anything new.
+- One shared tool-definition surface between stdio and HTTP/SSE — adding a tool is still one edit in `pipeline/mcp_server.py::build_server`.
+- Module-global session capture is fine for local-single-user; not safe for multi-user or remote MCP. Filed as a non-concern (the tool is local-first by design).
+
+**Retrospective lesson.** *Scope-cuts from earlier phases want a tracking entry, not a dead-end stub.* Phase 2.2 stubbed the sampling provider with a clear `ConfigurationError.fix` string pointing at the eventual work. When the user hit that error they had the exact setup instructions in hand — which made the conversation to "now wire this up" cheap. A stub with guidance is better than a silent feature gap OR a half-built implementation. Always leave signposts when you scope-cut.

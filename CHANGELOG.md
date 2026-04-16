@@ -4,6 +4,22 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Added — combined mode: web UI + MCP server in one process; "Use my Claude app" provider now works
+
+- `pipeline/serve.py --mode combined` boots a single uvicorn process that serves the web UI on `/` and an MCP server on `/mcp/sse` + `/mcp/messages/`. Third mode alongside `ui` (web UI only, no MCP) and `mcp` (stdio, for Claude-Code-spawned subprocess use). All three are independent; pick one per launch.
+- `pipeline/mcp_server.py::build_server()` — factored out from the stdio entry point so the HTTP/SSE mount can reuse the same 5 tool definitions. `run_stdio()` now calls it; nothing duplicated.
+- `ui/mcp_mount.py` — **new file**. Mounts `SseServerTransport` onto the FastAPI app, handles SSE lifecycle via `server.run()`-equivalent body, captures the live `ServerSession` into a module-global so outside code can reach it for sampling. Exposes `get_current_session()`, `get_current_loop()`, `is_attached()`.
+- `llm/mcp_sampling_provider.py` — stub replaced with a real implementation. `complete(system, user, ...)` looks up the captured session + event loop, bridges to the async `ServerSession.create_message()` via `asyncio.run_coroutine_threadsafe`, extracts text from the response, returns a string compatible with every other `LLMProvider`. Handles timeout, `McpError` (disconnected client, sampling unsupported), and generic exceptions — all become `ConfigurationError` with actionable fix instructions per the user's hard-fail preference.
+- `ui/app.py` lifespan now honors `AMW_MCP_COMBINED=1` (set by the combined-mode launcher) and calls `ui.mcp_mount.attach(app)` during startup. Absent the env var, the app runs without the MCP routes (standard `--mode ui` behavior).
+- `ui/templates/settings.html` — "Use my Claude app" radio option now has the full setup instructions inline: the `--mode combined` command + the exact `~/.claude/settings.json` JSON block users paste.
+- `README.md` — new "Use Claude as the LLM — no API key" section.
+- `ui/static/style.css` — `pre.inline-code` rule for the Claude-config snippet in settings.
+
+### Behavior — hard-fail when no Claude client connected (per user's explicit choice)
+
+- Selecting "Use my Claude app" in Settings and uploading a book when no Claude client is connected: parse stage fails with a clear `ConfigurationError` message containing both the `--mode combined` launch command and the Claude config JSON. No silent fallback to Anthropic/Gemini. Job is marked resumable on the history page so the user can retry after connecting their client.
+- Mid-parse disconnect: `McpError` is re-raised as `ConfigurationError` with "your Claude client may have disconnected" guidance.
+
 ### Added — split voice engines (narrator vs characters) + MCP default provider
 
 - `ui/services/settings.py::Settings` gets `narrator_backend` and `character_backend` fields (defaults `mlx-kokoro` and `chatterbox` respectively). The original `backend` field is kept as a single-engine fallback, rarely touched. Default provider changed from `anthropic` to `mcp` — most users who install this have a Claude client connected.
