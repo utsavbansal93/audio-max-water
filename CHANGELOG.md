@@ -4,7 +4,81 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
-### Added
+### Added — Phase 2.1 job persistence + stage tracker + resume + history + EPUB front-matter filter
+
+- `ui/services/job_store.py` — disk-backed job persistence. `PersistedJob` dataclass carries everything we record about a job (status, paths, per-stage state with timestamps + progress counters). `JobStore` writes each job to `build/_jobs/<job_id>.json` atomically (write-temp-then-rename). Jobs survive server restarts.
+- `ui/services/job_store.py::detect_last_good_stage` — walks a build directory and reports the first stage whose artifacts are missing. The resume endpoint uses this to decide where to restart.
+- `ui/services/session.py::Job` rewritten to wrap a `PersistedJob` and auto-save on every state transition (`status`, `error`, stage updates). Runtime-only state (asyncio.Queue, worker thread, in-memory Script/Cast models) stays non-persisted.
+- `ui/services/session.py::Job.apply_event()` — translates each `ProgressEvent` into a stage update and saves it. Every SSE event now also mutates disk state, so the history page + resume logic are trivially aware of where a job got to.
+- `ui/services/session.py::Job.hydrate_artifacts()` — lazy-load `script.json` / `source.md` / `cast.json` from disk when a job is resumed mid-pipeline.
+- `ui/app.py` lifespan — on startup, scan all persisted jobs; any stuck in "parsing" / "rendering" / "voices" gets rescued to status="error" with a friendly message ("Job was interrupted… Click Resume to continue"). The most-downstream "active" stage is the one marked error; earlier active stages are retroactively marked "done" if a later stage already completed.
+- `/history` page + `/api/resume/{job_id}` + `/api/job/{job_id}/delete` endpoints. History lists every persisted job with input filename, provider + backend + format, per-stage dots, status badge, and action buttons (Resume / Download / Open / Delete).
+- `_start_parse()` accepts `skip_to` so a resumed job can jump straight to cast (script.json already on disk) — leverages existing content-hash caches in `parse_to_disk`, `cast.propose`, and `render.render_all`.
+- `pipeline/parse.py::parse_to_disk` accepts `on_progress` callback; emits `ingest:start`, `ingest:done`, `parse:start`, `parse:done` events so the UI's stage tracker reflects the ingest/parse boundary (previously the UI showed ingest "active" forever because parse_to_disk handled it opaquely).
+- `ui/templates/_stage_tracker.html` + `history.html` — reusable stage-pill component (pending/active/done/error/skipped states with live progress bar on the active stage) and history list with per-job action row.
+- `ui/static/style.css` — stage tracker styles (pulsing active indicator, accent-color progress fill beneath active pill, checkmark on done, exclamation on error, dashed circle on skipped). History list with status badges + per-job border accent. Mini "stage dots" for compact history rows.
+- `ui/static/app.js::subscribeProgress` rewritten to update the stage tracker in place from SSE events (pill status + inline progress bar + stage title + overall progress fill), with configurable terminal-stage redirect semantics via `doneRedirect` + `terminalStages`.
+- `pipeline/ingest/epub_ingestor.py` — front-matter filter. Skips cover / title page / copyright / TOC / colophon / imprint / index / bibliography / appendix sections via three signals: `epub:type` attribute (body vocab wins), filename pattern (`cover.xhtml`, `titlepage.xhtml`, `toc.xhtml`, etc.), and TOC entry title ("Cover", "Copyright", "Contents", …). Preserves preface / foreword / introduction / dedication / epigraph / prologue / epilogue / afterword / chapter-labeled sections — the user listens to *content*, not metadata. Body-signal detection (filename or title matches `dedic|preface|foreword|introduction|prologue|chapter|part|book`) takes precedence over frontmatter signals so "dedication.xhtml" is kept even though boilerplate detectors would otherwise skip it. Emits a `warnings.warn` listing what was skipped so the user can see what didn't make it into the audiobook.
+- `BACKLOG.md`: "URL ingestor — paste a link". Deferred because article extraction from arbitrary HTML is a substantially different reliability problem than file ingest.
+
+### Changed — Phase 2.1
+- `pipeline/run.py::run` threads its `on_progress` callback into `parse_to_disk`, so CLI runs now emit per-stage events too (before, only the UI saw ingest/parse events because the orchestrator fired its own start markers outside).
+- The topbar gets a "History" link (was just the gear-icon for Settings).
+
+### Added — Phase 2 web UI + MCP server
+
+- `pipeline/serve.py` — launcher. `python -m pipeline.serve --mode ui` starts the local web UI on `http://127.0.0.1:8765`; `--mode mcp` starts the MCP server over stdio for Claude Code / Claude Desktop integration.
+- `ui/` package — FastAPI app with five Apple-HIG-flavored screens (Upload → Voices → Options → Rendering → Done) plus Settings. HTML via Jinja2, Server-Sent Events for live progress, zero-JS-build static assets.
+  - `ui/app.py` — all routes in one file (pages + API + SSE stream); sync pipeline calls are offloaded to worker threads so uvicorn's event loop stays responsive.
+  - `ui/services/settings.py` — persisted settings at `~/.config/audio-max-water/settings.toml` (0600 perms). LLM provider, API keys, default backend + format, theme. Env vars always win over the saved file.
+  - `ui/services/session.py` — single global `Job` (local-first, one user, one in-flight render) with a `public_view()` that produces a JSON-safe snapshot for templates.
+  - `ui/services/progress.py` — threadsafe SSE emitter; wraps `ProgressEvent` instances from the pipeline into `event: <stage>:<phase>\ndata: <json>` frames.
+  - `ui/services/audition.py` — voice audition: synthesize a short WAV of `text` read by `voice_id`, cached on disk at `~/.cache/audio-max-water/auditions/<hash>.wav`.
+  - `ui/services/backend_pool.py` — **process-wide** singleton cache for TTS backends, shared across cast proposal, audition, and render. Loading MLX Kokoro twice in one process corrupts the pipeline (`[Errno 32] Broken pipe`); the pool lock guards both load and synthesize so concurrent HTTP handlers and the render worker don't step on each other.
+- `ui/templates/` — base + 7 screens: `upload.html`, `settings.html`, `parsing.html`, `voices.html`, `options.html`, `rendering.html`, `done.html`. Progressive disclosure (advanced options collapsed), no jargon ("Audiobook" / "Ebook with synced audio"), 44pt tap targets, single-accent-color buttons.
+- `ui/static/style.css` — Apple-HIG-derived stylesheet. Typography-first (SF Pro system stack, weight 300 headers), 12pt card radius + 8pt buttons + 6pt inputs, single accent color (#007AFF / #0A84FF), native `prefers-color-scheme` dark/light with matching explicit `[data-theme="light"|"dark"]` overrides, spring-easing motion, `prefers-reduced-motion` respected.
+- `ui/static/app.js` — vanilla JS (~300 LOC, no framework, no build). Drag & drop uploader, SSE progress subscription with auto-redirect on stage completion, voice picker `<dialog>` sheet with audio playback + spring animations, accessible keyboard focus, global error banner.
+- `pipeline/mcp_server.py` — MCP server exposing 5 tools: `run_pipeline` (one-shot end-to-end), `parse_only` (ingest + parse → script JSON), `list_voices`, `audition_voice`, `supported_formats`. Uses the `mcp` Python SDK over stdio. Tools offload sync pipeline work to `asyncio.to_thread` so the stdio event loop stays responsive.
+- `llm/mcp_sampling_provider.py` — stub provider for the UI's "Use my Claude app" option. Currently raises `ConfigurationError` with a setup-instructions hint; the real implementation needs a combined UI+MCP launcher (filed in backlog as "MCP sampling combined mode").
+- `pipeline/_events.py` — `ProgressEvent` dataclass + `ProgressCallback` type + `emit()` helper. Fire-and-forget — callbacks can't break a render.
+
+### Changed
+- `pipeline/render.py::render_chapter` and `render_all` gain optional `on_progress: ProgressCallback` kwargs. Default None = silent (CLI unchanged). The web UI wires this into its SSE queue; each chapter emits `stage:"render" phase:"start|progress|done"` events with `current / total / chapter / total_chapters` fields.
+- `pipeline/render.py::render_all` also accepts `backends: dict[str, TTSBackend] | None`. When the UI passes its shared backend pool, MLX / Chatterbox load exactly once per process; without it the behavior is unchanged (fresh cache per call).
+- `pipeline/run.py::run` accepts `on_progress` and emits stage-boundary events (`ingest:start`, `parse:done`, `cast:start`, etc.) so the UI gets uniform progress regardless of which stage is running.
+- `pipeline/cast.py::propose` accepts an optional `backend: TTSBackend` kwarg so the UI's shared pool is reused for audition rendering. Default path (None) is unchanged.
+- `llm/__init__.py::get_provider` now accepts `"mcp"` as a provider name, dispatching to `MCPSamplingProvider`.
+- `pyproject.toml` `[ui]` extra already had FastAPI + uvicorn + Jinja2 + multipart + mcp from the Phase 1 prep; installing `-e '.[ui]'` is now the correct command for Phase 2.
+
+### Added — Phase 1 pipeline-ification (orchestrator + multi-format ingest + audio-EPUB3 + cover art)
+
+- `pipeline/run.py` — end-to-end orchestrator. One command: `python -m pipeline.run --in <file> [--format m4b|epub3] [--cover <img>]` chains ingest → parse → cast (auto-propose + auto-approve) → render → qa → package with no human-in-the-loop. Measures + logs stage timings; gracefully skips optional steps (Whisper QA) when deps are missing; hard-fails with an install command on required missing deps.
+- `pipeline/ingest/` package with an `Ingestor` ABC (mirrors `TTSBackend` pattern) and concrete implementations per format: `text_ingestor.py` (`.txt`, stdlib-only), `markdown_ingestor.py` (`.md`, H1/H2 chapter detection), `docx_ingestor.py` (python-docx, Heading 1/2 style detection), `epub_ingestor.py` (ebooklib + BeautifulSoup, TOC + spine walking), `pdf_ingestor.py` (pdfplumber, font-size heuristic for chapter detection). All produce a format-agnostic `RawStory` intermediate with `to_source_md()` that renders canonical markdown for both LLM input and validator reference.
+- `llm/` package with an `LLMProvider` ABC (mirrors `TTSBackend`), `AnthropicProvider` (default model `claude-opus-4-5`, reads `ANTHROPIC_API_KEY`), `GeminiProvider` (default `gemini-2.5-pro`, reads `GEMINI_API_KEY`), and `get_provider(name)` factory. Used only by `pipeline/parse.py`; render/QA/package stages remain LLM-free.
+- `pipeline/parse.py` — programmatic LLM parse step. Reads `prompts/parse_story.md` as the system prompt, sends `RawStory.to_source_md()` as user input, parses strict JSON, validates via `ScriptModel`, runs `check_faithful_wording`. On divergence, does one targeted retry with the divergence context injected into the follow-up prompt. Caches by `source.md` hash: re-running with unchanged input skips the LLM call. Writes `script.json` + `source.md` into `<build_dir>`.
+- `pipeline/epub3.py` — audio-EPUB3 packager. Produces an `.epub` with SMIL Media Overlays ([EPUB 3 spec](https://www.w3.org/TR/epub-33/#sec-media-overlays)) — synchronized text + audio so compatible readers (Apple Books, Thorium, VoiceDream) highlight each paragraph as its audio plays. Reuses per-line WAV durations from `build/ch<NN>/lines/concat.txt` for precise `clipBegin`/`clipEnd` ranges. Cover art registered in manifest + `meta[name=cover]`.
+- `pipeline/package.py::package()` — format dispatcher. `format="m4b"` → `build_m4b()`; `format="epub3"` → `pipeline/epub3.py::build_audio_epub3()`. Keeps existing `build_m4b` + CLI intact.
+- Cover art embedding in `.m4b` via ffmpeg `attached_pic` disposition — single-pass, no extra dependency. Added `--cover` flag to `pipeline.package` and `pipeline.run`.
+- `pipeline/_errors.py` — `PipelineError` base class, `MissingDependency` (carries `package`, `feature`, `install`, `required` fields), `ParseError`, `RenderError`. Optional-dep code paths now raise `MissingDependency` instead of `RuntimeError` so the orchestrator (and the Phase 2 UI) can distinguish "install this" from "something else broke" and take the right action (hard-fail vs graceful skip).
+- `pipeline/_logging.py` — `configure_logging(build_dir=...)` sets up a console handler (INFO level, human-friendly with relative timestamps) + a DEBUG-level file handler at `<build_dir>/run.log` with full tracebacks. `pipeline.run` calls it on entry; every stage module uses `logging.getLogger(__name__)`.
+- `config.yaml` additions: `output.format` (m4b | epub3), `output.cover_path`, and `llm` block (`provider`, `model`, `max_tokens`).
+- `pyproject.toml` new optional-dependency groups: `ingest` (python-docx, pdfplumber, ebooklib, beautifulsoup4), `metadata` (mutagen — reserved for future post-processing), `llm` (anthropic), `llm-gemini` (google-genai). Expanded `ui` group to include `mcp` for Phase 2.
+- `llm/` added to `setuptools.packages.find`.
+
+### Changed
+- `pipeline/qa.py::whisper_roundtrip` now raises `MissingDependency(required=False)` when `faster-whisper` isn't installed — letting the orchestrator skip Whisper QA without failing the render.
+- `pipeline/package.py::build_m4b()` gains `cover_path: Path | None` kwarg; ffmpeg command conditionally maps a cover input as `attached_pic` video stream when supplied.
+- `pipeline/validate.py::_normalize` refined for the Phase 1 ingestor's canonical source format: H2+ heading *lines* are dropped entirely (structural chapter markers emitted for multi-chapter stories are JSON metadata, not spoken content), H1 keeps prefix-stripped text (matches the convention where the book title is the narrator's opening line), italic by-lines (`*by Author*`) are dropped. Existing stories' validator behavior unchanged.
+- `prompts/parse_story.md` — two clarifications added: (7) book title and preamble paragraph are spoken narrator lines in Chapter 1, include them verbatim so the faithful-wording validator matches; (2, appended) every speaker string in `lines` (including `narrator`) MUST have a matching entry in the top-level `characters` array. Caught on first Gemini end-to-end run where the model treated the title as metadata.
+- `pipeline/ingest/base.py::RawStory.to_source_md` no longer emits a redundant `## Chapter 1: <title>` header for single-chapter sources — the H1 title alone suffices and avoids doubling the title in the validator's source reference.
+- LLM providers (`AnthropicProvider`, `GeminiProvider`) now raise `ConfigurationError` (not `RuntimeError`) when their API key env var is missing, so the orchestrator distinguishes user-config errors from unexpected crashes. Orchestrator exits 2 for `MissingDependency`, 3 for `ConfigurationError`, 1 for other `PipelineError` / unexpected.
+
+### Added (continued)
+- `pipeline/_env.py::load_default_env` — minimal stdlib-only `.env` loader invoked at the top of `pipeline/run.py::main`. Reads `KEY=VALUE` from repo-root `.env`; existing shell env wins; warns on world/group-readable perms. No new dependency.
+- `pipeline/_errors.py::ConfigurationError` — distinct exception for missing env vars / bad flag combinations, separate from `MissingDependency` (which is for installed-package issues).
+- `.env.example` — template committed to the repo; `.env` is gitignored via new `.gitignore` entries (`.env`, `.env.*`, `*.pem`, `*.key`, with `!.env.example` whitelist).
+
+### Added (pre-existing — leaving in place)
 - `pipeline/_memory.py` — memory watchdog module. `require_free(min_gb, backend=...)` checks `psutil.virtual_memory().available` and refuses to start a render/bench with a helpful error when free RAM is below threshold. Catches the "forgot a render was running" case automatically.
 - `pipeline/render.py::main()` and `pipeline/bench.py::main()` now call `require_free(4.0)` and `require_free(4.5)` respectively before any model load.
 - `psutil>=7.0` added to `pyproject.toml` base dependencies.

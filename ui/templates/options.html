@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Options — {{ job.title }}{% endblock %}
+{% block content %}
+<section class="options-page">
+  <header class="page-header">
+    <h1 class="page-title">Options</h1>
+    <p class="caption muted">{{ job.title }}</p>
+  </header>
+
+  <form action="/api/options/{{ job.job_id }}" method="post" enctype="multipart/form-data" class="options-form">
+    <fieldset class="card">
+      <legend>Output</legend>
+      <div class="segmented segmented--large" role="radiogroup">
+        <label>
+          <input type="radio" name="output_format" value="m4b" {% if job.output_format == "m4b" %}checked{% endif %} />
+          <span>
+            <strong>Audiobook</strong>
+            <small>M4B with chapter markers</small>
+          </span>
+        </label>
+        <label>
+          <input type="radio" name="output_format" value="epub3" {% if job.output_format == "epub3" %}checked{% endif %} />
+          <span>
+            <strong>Ebook with synced audio</strong>
+            <small>EPUB3 · text highlights as audio plays</small>
+          </span>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="card">
+      <legend>Cover art <span class="caption muted">(optional)</span></legend>
+      <label class="cover-upload">
+        <input type="file" name="cover" accept="image/jpeg,image/png" id="cover-input" />
+        <span id="cover-label" class="caption muted">Choose an image — JPG or PNG</span>
+      </label>
+    </fieldset>
+
+    <details class="advanced">
+      <summary class="caption">Voice engine</summary>
+      <fieldset class="card">
+        <label class="field">
+          <select name="backend">
+            {% for b in backends %}
+              <option value="{{ b }}" {% if job.backend == b %}selected{% endif %}>{{ b }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="caption muted">Changing the voice engine after voices are proposed will invalidate the current cast. Only touch this if you know why.</p>
+      </fieldset>
+    </details>
+
+    <div class="action-row action-row--sticky">
+      <a href="/voices/{{ job.job_id }}" class="btn-ghost">← Back</a>
+      <button type="submit" class="btn-primary">Create →</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const input = document.getElementById("cover-input");
+  const label = document.getElementById("cover-label");
+  input.addEventListener("change", () => {
+    label.textContent = input.files.length ? input.files[0].name : "Choose an image — JPG or PNG";
+  });
+</script>
+{% endblock %}

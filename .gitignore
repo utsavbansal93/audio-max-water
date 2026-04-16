@@ -12,7 +12,24 @@ build*/**/*.mp3
 build*/**/concat.txt
 build*/**/_concat.txt
 build*/**/_chapters.ffmeta
+# UI-created build directories (per-session work scratchpads). Regenerable.
+build/_ui_*/
+build/_ui_uploads/
+# Persistent job records (user-specific state, not code).
+build/_jobs/
 !build/.gitkeep
+
+# setuptools metadata for editable installs — regenerated on every pip install -e .
+*.egg-info/
+
+# User-placed inputs that aren't part of the canonical example set.
+# Keep the three tracked stories (*.md) by excluding only non-.md entries.
+stories/*.epub
+stories/*.pdf
+stories/*.docx
+stories/*.mobi
+stories/*.txt
+stories/*.epub/
 
 out/**
 !out/.gitkeep
@@ -31,5 +48,12 @@ voice_samples/**
 # authored script files live at build*/script.json and have an explicit
 # !build*/script.json override implied by the allow-list above.
 /script.json
+
+# Secrets — API keys, credentials. NEVER commit.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
 
 .claude/

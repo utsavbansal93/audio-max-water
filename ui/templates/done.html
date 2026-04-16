@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Ready — {{ job.title }}{% endblock %}
+{% block content %}
+<section class="centered done-page">
+  <div class="checkmark" aria-hidden="true">✓</div>
+  <h1 class="stage-title">Your audiobook is ready</h1>
+  <p class="caption muted">{{ job.title }} · {% if job.output_format == "m4b" %}Audiobook{% else %}Ebook with synced audio{% endif %}</p>
+
+  {% if job.output_format == "m4b" %}
+    <audio controls preload="metadata" src="/download/{{ job.job_id }}" class="preview-audio"></audio>
+  {% endif %}
+
+  <div class="action-row action-row--large">
+    <a href="/download/{{ job.job_id }}" class="btn-primary" download>Download</a>
+    <a href="/" class="btn-ghost">Start another</a>
+  </div>
+
+  <p class="caption muted file-path"><code>{{ job.output_path }}</code></p>
+</section>
+{% endblock %}

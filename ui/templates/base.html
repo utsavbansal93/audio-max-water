@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>{% block title %}Audio Max Water{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="preconnect" href="/static" />
+</head>
+<body data-theme="{{ settings.theme if settings and settings.theme else 'system' }}">
+  <header class="topbar">
+    <a href="/" class="brand">Audio Max Water</a>
+    <nav class="topbar-nav">
+      <a href="/history" class="topbar-link">History</a>
+      <a href="/settings" class="icon-link" title="Settings" aria-label="Settings">⚙</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

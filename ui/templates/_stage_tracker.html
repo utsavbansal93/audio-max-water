@@ -1,0 +1,19 @@
+{# Reusable stage-tracker component.
+   Expects `stages` in context — a list of dicts with keys
+   `key`, `status`, `message`, `current`, `total`.
+#}
+<ol class="stage-tracker" id="stage-tracker" aria-label="Pipeline stages">
+  {% for s in stages %}
+    <li class="stage-pill stage-pill--{{ s.status }}" data-stage="{{ s.key }}">
+      <span class="stage-indicator" aria-hidden="true">
+        {% if s.status == "done" %}✓{% elif s.status == "error" %}!{% elif s.status == "active" %}●{% elif s.status == "skipped" %}—{% else %}○{% endif %}
+      </span>
+      <span class="stage-name">{{ s.key|capitalize }}</span>
+      {% if s.status == "active" %}
+        <span class="stage-progress-wrap" aria-hidden="true">
+          <span class="stage-progress-fill" style="width: {{ (s.current / s.total * 100) if s.total else 0 }}%;"></span>
+        </span>
+      {% endif %}
+    </li>
+  {% endfor %}
+</ol>

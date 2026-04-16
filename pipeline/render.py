@@ -15,6 +15,7 @@ from typing import Iterable
 
 import yaml
 
+from pipeline._events import ProgressCallback, ProgressEvent, emit
 from pipeline.config import load_config
 from pipeline.schema import CastModel, ChapterModel, LineModel, ScriptModel
 from pipeline.validate import check_voice_consistency
@@ -153,11 +154,18 @@ def render_chapter(
     cast: CastModel,
     chapter: ChapterModel,
     build_dir: Path,
+    *,
+    on_progress: ProgressCallback = None,
+    total_chapters: int = 0,
 ) -> Path:
     """Render one chapter. Returns the path to the stitched chapter MP3.
 
     `backends` is a mutable cache keyed by backend name; engines are loaded
     on first use so Chatterbox isn't paid for when a chapter is all-Kokoro.
+
+    `on_progress` — optional callback fired at chapter start, per-line, and
+    chapter end. None = silent (CLI default). The web UI wires this to
+    an SSE event queue.
     """
     ch_dir = build_dir / f"ch{chapter.number:02d}"
     lines_dir = ch_dir / "lines"
@@ -169,6 +177,13 @@ def render_chapter(
     prev: LineModel | None = None
     prev_was_inline_tag = False
     lines_list = chapter.lines
+    n_lines = len(lines_list)
+    emit(on_progress, ProgressEvent(
+        stage="render", phase="start",
+        message=f"chapter {chapter.number}: {chapter.title}",
+        current=0, total=n_lines,
+        chapter=chapter.number, total_chapters=total_chapters,
+    ))
     for idx, line in enumerate(lines_list, start=1):
         # Scene break: inject silence and skip synthesis.
         if line.text.strip() == "---":
@@ -216,6 +231,16 @@ def render_chapter(
         wav_paths.append(wav_path)
         prev = line
 
+        # Emit per-line progress. Truncate the text preview so UIs aren't
+        # flooded; the full script is elsewhere if they need it.
+        preview = line.text[:60] + ("…" if len(line.text) > 60 else "")
+        emit(on_progress, ProgressEvent(
+            stage="render", phase="progress",
+            message=f"ch{chapter.number:02d} line {idx}/{n_lines}: [{line.speaker}] {preview}",
+            current=idx, total=n_lines,
+            chapter=chapter.number, total_chapters=total_chapters,
+        ))
+
     # Stitch via ffmpeg concat.
     concat_file = ch_dir / "concat.txt"
     concat_file.write_text("\n".join(f"file '{p.resolve()}'" for p in wav_paths) + "\n")
@@ -234,6 +259,9 @@ def render_all(
     cast_path: Path,
     backend_name: str | None = None,
     build_dir: Path | None = None,
+    *,
+    on_progress: ProgressCallback = None,
+    backends: dict[str, TTSBackend] | None = None,
 ) -> list[Path]:
     global CFG
     script = ScriptModel.model_validate(json.loads(script_path.read_text()))
@@ -257,7 +285,12 @@ def render_all(
     # voice id must exist in the backend that will render it. We check
     # voice-id validity per-backend by loading each backend on-demand just
     # for list_voices() — same cache the renderer uses.
-    backends: dict[str, TTSBackend] = {}
+    #
+    # If `backends` was supplied by the caller (UI passes its shared pool),
+    # reuse those instances so MLX / Chatterbox aren't loaded twice in one
+    # process.
+    if backends is None:
+        backends = {}
     speakers = {line.speaker for ch in script.chapters for line in ch.lines}
     voice_errs: list[str] = []
     for sp in speakers:
@@ -277,11 +310,21 @@ def render_all(
         raise SystemExit(1)
 
     outputs: list[Path] = []
+    total = len(script.chapters)
     for ch in script.chapters:
         print(f"rendering chapter {ch.number}: {ch.title}")
-        out = render_chapter(backends, cast, ch, build_dir)
+        out = render_chapter(
+            backends, cast, ch, build_dir,
+            on_progress=on_progress, total_chapters=total,
+        )
         print("  ->", out)
         outputs.append(out)
+        emit(on_progress, ProgressEvent(
+            stage="render", phase="done",
+            message=f"chapter {ch.number} done",
+            current=ch.number, total=total,
+            chapter=ch.number, total_chapters=total,
+        ))
     return outputs
 
 

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Recording — {{ job.title }}{% endblock %}
+{% block content %}
+<section class="centered pipeline-page">
+  <header class="page-header--tight">
+    <h1 class="stage-title" id="stage-title">Recording</h1>
+    <p id="progress-message" class="caption muted">&nbsp;</p>
+    <p id="progress-meta" class="caption muted">&nbsp;</p>
+  </header>
+
+  {% with stages = job.stages %}
+    {% include "_stage_tracker.html" %}
+  {% endwith %}
+
+  <div class="progress-bar" role="progressbar" aria-label="Render progress">
+    <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+  </div>
+
+  <details class="advanced">
+    <summary class="caption">Technical details</summary>
+    <pre id="log" class="log"></pre>
+  </details>
+
+  <div class="action-row" style="margin-top: 32px;">
+    <a href="/history" class="btn-ghost btn-sm">View history</a>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (async () => {
+    // Start the render only if the job isn't already rendering.
+    const state = await fetch("/api/job/{{ job.job_id }}").then(r => r.json());
+    if (state.status !== "done" && state.status !== "rendering") {
+      await fetch("/api/render/{{ job.job_id }}", { method: "POST" });
+    }
+    AMW.subscribeProgress("{{ job.job_id }}", {
+      doneRedirect: "/done/{{ job.job_id }}",
+      terminalStages: ["package"],
+    });
+  })();
+</script>
+{% endblock %}

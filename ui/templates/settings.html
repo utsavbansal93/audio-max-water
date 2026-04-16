@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Settings — Audio Max Water{% endblock %}
+{% block content %}
+<section class="settings-page">
+  <h1>Settings</h1>
+
+  <form action="/api/settings" method="post" class="settings-form">
+    <fieldset class="card">
+      <legend>LLM provider</legend>
+      <p class="caption muted">
+        One LLM call is needed to parse each new book into a structured script.
+        Everything else — voices, rendering, packaging — runs locally.
+      </p>
+      <div class="radio-group">
+        <label class="radio-row">
+          <input type="radio" name="provider" value="anthropic"
+                 {% if settings.provider == "anthropic" %}checked{% endif %} />
+          <div>
+            <strong>Anthropic Claude</strong>
+            <p class="caption muted">Most careful for faithful wording. Paid.</p>
+          </div>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="provider" value="gemini"
+                 {% if settings.provider == "gemini" %}checked{% endif %} />
+          <div>
+            <strong>Google Gemini</strong>
+            <p class="caption muted">Fast. Free tier available with rate limits.</p>
+          </div>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="provider" value="mcp"
+                 {% if settings.provider == "mcp" %}checked{% endif %} />
+          <div>
+            <strong>Use my Claude app</strong>
+            <p class="caption muted">Route the one LLM call through your connected Claude Code / Claude Desktop via MCP sampling. (Requires running <code>python -m pipeline.serve --mode both</code> and configuring Claude to connect.)</p>
+          </div>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="card">
+      <legend>API keys</legend>
+      <p class="caption muted">
+        Saved to <code>~/.config/audio-max-water/settings.toml</code> with 0600 permissions.
+        Environment variables (<code>ANTHROPIC_API_KEY</code>, <code>GEMINI_API_KEY</code>) always override saved values.
+      </p>
+      <label class="field">
+        <span>Anthropic API key</span>
+        <input type="password" name="anthropic_api_key"
+               placeholder="{{ settings.anthropic_api_key or 'sk-ant-...' }}"
+               autocomplete="off" />
+        {% if settings.env_has_anthropic %}
+          <span class="caption muted">✓ present in environment (takes precedence)</span>
+        {% endif %}
+      </label>
+      <label class="field">
+        <span>Gemini API key</span>
+        <input type="password" name="gemini_api_key"
+               placeholder="{{ settings.gemini_api_key or 'AI...' }}"
+               autocomplete="off" />
+        {% if settings.env_has_gemini %}
+          <span class="caption muted">✓ present in environment (takes precedence)</span>
+        {% endif %}
+      </label>
+
+      <details class="advanced">
+        <summary class="caption">Advanced — model overrides</summary>
+        <label class="field">
+          <span>Anthropic model</span>
+          <input type="text" name="anthropic_model"
+                 value="{{ settings.anthropic_model }}"
+                 placeholder="claude-opus-4-5 (default)" />
+        </label>
+        <label class="field">
+          <span>Gemini model</span>
+          <input type="text" name="gemini_model"
+                 value="{{ settings.gemini_model }}"
+                 placeholder="gemini-3.1-flash-lite-preview (default)" />
+        </label>
+      </details>
+    </fieldset>
+
+    <fieldset class="card">
+      <legend>Defaults</legend>
+      <label class="field">
+        <span>Voice engine</span>
+        <select name="backend">
+          <option value="mlx-kokoro" {% if settings.backend == "mlx-kokoro" %}selected{% endif %}>MLX Kokoro · Apple Silicon, fast, restrained</option>
+          <option value="kokoro" {% if settings.backend == "kokoro" %}selected{% endif %}>Kokoro (torch) · portable</option>
+          <option value="chatterbox" {% if settings.backend == "chatterbox" %}selected{% endif %}>Chatterbox · expressive, voice cloning, slow</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Output</span>
+        <div class="segmented" role="radiogroup">
+          <label><input type="radio" name="output_format" value="m4b" {% if settings.output_format == "m4b" %}checked{% endif %} /><span>Audiobook</span></label>
+          <label><input type="radio" name="output_format" value="epub3" {% if settings.output_format == "epub3" %}checked{% endif %} /><span>Ebook with synced audio</span></label>
+        </div>
+      </label>
+      <label class="field">
+        <span>Appearance</span>
+        <div class="segmented" role="radiogroup">
+          <label><input type="radio" name="theme" value="system" {% if settings.theme == "system" %}checked{% endif %} /><span>System</span></label>
+          <label><input type="radio" name="theme" value="light" {% if settings.theme == "light" %}checked{% endif %} /><span>Light</span></label>
+          <label><input type="radio" name="theme" value="dark" {% if settings.theme == "dark" %}checked{% endif %} /><span>Dark</span></label>
+        </div>
+      </label>
+    </fieldset>
+
+    <div class="action-row">
+      <button type="submit" class="btn-primary">Save</button>
+      <a href="/" class="btn-ghost">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

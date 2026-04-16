@@ -63,17 +63,68 @@ The output is a revision to `CLAUDE.md`'s per-backend budget and/or to the watch
 
 **When to revisit.** If we build many more scenes and start seeing the heuristic systematically miss on certain character archetypes, or when Chatterbox/Sesame voice libraries grow beyond what simple tag-scoring can navigate.
 
-### `pipeline/script.py` as a real Opus subprocess call
+### ~~`pipeline/script.py` as a real Opus subprocess call~~ (SHIPPED)
 
-**What.** Today the parse step is "me-in-Claude-Code-authoring script.json by hand." Would be nice to call Opus programmatically so a non-Claude-Code user can run the full pipeline without me in the loop.
+Landed as `pipeline/parse.py` + `llm/` package in the Phase 1 orchestrator. Non-Claude-Code users can now run `python -m pipeline.run --in story.md` with `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in their env; no Claude Code required.
 
-**Why deferred.** The user hasn't wanted to run the pipeline outside Claude Code yet. When they do, this becomes the blocker.
+### ~~Web UI + MCP server (Phase 2)~~ — SHIPPED as separate-invocation Phase 2
 
-### Web UI (Phase 2 from the original plan)
+Landed as `ui/` + `pipeline/serve.py` + `pipeline/mcp_server.py`. See DECISIONS #0026 (UI stack), #0027 (backend pool), #0028 (separate invocations), #0029 (progress callback). Web UI at `http://127.0.0.1:8765` supports Anthropic + Gemini API keys; MCP server at `python -m pipeline.serve --mode mcp` exposes pipeline tools for Claude Code / Claude Desktop. The "Use my Claude app" (MCP sampling) provider option is a stub until combined-mode lands — see below.
 
-**What.** Tiny FastAPI + HTML front door for uploading stories, approving cast samples in-browser, downloading finished `.m4b`.
+### MCP sampling — combined UI + MCP server mode
 
-**Why deferred.** CLI works, user hasn't asked for it since the original plan. Becomes worth it if a non-technical user of this tool is on the horizon, or if managing many stories simultaneously gets tedious.
+**What.** Run the UI and the MCP server in one Python process so that, when a Claude client connects to the MCP server, the UI's parse step can use `sampling/createMessage` to route LLM generation through Claude instead of requiring an API key. This is the third LLM provider option in the UI Settings screen ("Use my Claude app"), currently stubbed with a `ConfigurationError`.
+
+**Why deferred.** Doing it right means (a) HTTP/SSE MCP transport so FastAPI and MCP can share the asyncio event loop without fighting over stdin/stdout, (b) lifecycle management for dropped MCP client connections mid-parse, (c) documentation + Claude config templates for users to register the HTTP MCP URL. Phase 2 ships separate-invocation mode which covers the two dominant workflows (API-key-in-UI, Claude-Code-drives-tools) — sampling is the third workflow that serves a smaller audience.
+
+**When to revisit.** When a user actually hits the stub's `ConfigurationError` and wants the feature, OR when the MCP ecosystem standardizes on HTTP/SSE transport and combined mode becomes a common pattern.
+
+**What the work looks like.**
+- Add `python -m pipeline.serve --mode both` that mounts the MCP server on an HTTP/SSE route within the same FastAPI app.
+- Implement `llm/mcp_sampling_provider.py::complete()` using the server's active `RequestContext.session.create_message(...)`.
+- Document Claude Desktop / Claude Code config for HTTP MCP transport.
+- Handle the "no client connected" case — UI should fall back to API key automatically if a client disconnects mid-parse.
+
+### Minor-character voice defaults
+
+**What.** In the Phase 2 voice picker, when a character has < N lines (configurable threshold), skip the per-character picker and auto-assign from a small fallback pool. Threshold + pool are user-configurable in settings. Goal: don't make the user pick a voice for every walk-on — let the important characters get attention.
+
+**Why deferred.** Depends on the Phase 2 UI existing. A CLI version of this isn't useful; users running `pipeline.run` already get auto-rank-1 for everyone.
+
+**Parent.** Web UI + embedded MCP server.
+
+### URL ingestor — "paste a link"
+
+**What.** Let the user paste a URL on the Upload screen. If the page is reachable and its main content is extractable (non-SPA, reachable without auth, reasonably article-shaped), ingest it like any other source. Fall back to a clear error ("That page is behind auth / JavaScript-only / too short to parse") if not.
+
+**Why deferred.** Substantially harder than file ingest: content extraction from arbitrary HTML needs heuristics like Readability, boilerplate-stripping, redirect handling, and a failure taxonomy the UI can render helpfully. The upload-a-file path covers the user's main use case today.
+
+**What the work looks like.**
+- `pipeline/ingest/url_ingestor.py` — fetches the URL via `httpx`, extracts main content via a library like `readability-lxml` or `trafilatura`, falls back to `beautifulsoup4` stripping for simple pages.
+- New input type in `get_ingestor()` keyed on `http://` / `https://` prefix, not extension.
+- UI: second input on `/` that accepts a URL, same `/api/upload` endpoint downstream (writes the extracted text to a synthetic `.txt` file in `build/_ui_uploads/` so the rest of the pipeline is unchanged).
+- Security: follow only HTTPS redirects, bound body to a few MB, refuse non-HTML content types, don't embed user HTML in any response (already safe since we extract text).
+- Clear error UX when content looks like a nav shell, paywall, or login form (very short extracted text → actionable message).
+
+### `.mobi` ingest
+
+**What.** Add `MobiIngestor` to `pipeline/ingest/` so users can drop Kindle `.mobi` files straight in.
+
+**Why deferred.** No clean pure-Python MOBI parser as of April 2026 — the well-maintained path is shelling out to `KindleUnpack`. Kindle users can re-export to `.epub` via Calibre in one click, which covers the 95% case. Filed so we don't lose the requirement; will implement when a concrete user hits it.
+
+### Auto-approve cast confidence threshold
+
+**What.** `pipeline.run` currently auto-approves the rank-1 voice for every character. If the heuristic's top pick is only marginally better than rank-2 (score delta < X), pause and prompt the user — either interactively at the CLI or as a "please review" item in the UI.
+
+**Why deferred.** Quality-of-life improvement; the heuristic has been right enough not to be the limiting factor. Becomes worth it when we start rendering books with 20+ characters where the heuristic makes a visibly-wrong pick on at least one.
+
+### Emotion re-tagging pass
+
+**What.** Optional standalone step that re-runs LLM emotion annotation on an already-parsed `script.json` — useful when you want to tune a specific chapter's dramatic peaks without re-parsing (re-parse risks faithful-wording divergence; emotion re-tag doesn't touch `line.text`).
+
+**Why deferred.** The current parse step already emits emotion labels from book context; the only time this would help is when listening reveals a specific scene that's under- or over-emoted, and you want the LLM to reconsider without redoing the whole parse. Not a current bottleneck; file as refinement.
+
+### LLM-driven casting (replace the tag heuristic in `pipeline/cast.py`)
 
 ---
 

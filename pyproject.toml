@@ -19,7 +19,32 @@ dependencies = [
 [project.optional-dependencies]
 chatterbox = ["chatterbox-tts"]
 xtts = ["TTS"]
-ui = ["fastapi", "uvicorn[standard]", "python-multipart"]
+
+# Multi-format ingest (Phase 1 orchestrator). Each ingestor imports its
+# parser lazily so an install without this group still runs text/.md inputs.
+ingest = [
+  "python-docx>=1.0",
+  "pdfplumber>=0.10",
+  "ebooklib>=0.18",
+  "beautifulsoup4>=4.12",
+]
+
+# Cover art embedding (m4b covr atom, epub3 cover manifest).
+metadata = ["mutagen>=1.47"]
+
+# LLM providers for the parse step (raw text -> script.json).
+# Anthropic is the default provider; Gemini is optional.
+llm = ["anthropic>=0.40"]
+llm-gemini = ["google-genai>=0.5"]
+
+# Phase 2 — web UI + embedded MCP server (not used in Phase 1).
+ui = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "python-multipart>=0.0.9",
+  "jinja2>=3.1",
+  "mcp>=1.0",
+]
 
 [tool.setuptools.packages.find]
-include = ["tts*", "pipeline*", "ui*"]
+include = ["tts*", "pipeline*", "ui*", "llm*"]

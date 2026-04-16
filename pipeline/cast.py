@@ -100,9 +100,19 @@ def _render_sample(backend: TTSBackend, text: str, voice_id: str, out_path: Path
 
 # --- main ---------------------------------------------------------------------
 
-def propose(script_path: Path, out_dir: Path, backend_name: str) -> tuple[CastModel, dict[str, list[Voice]]]:
+def propose(
+    script_path: Path,
+    out_dir: Path,
+    backend_name: str,
+    *,
+    backend: TTSBackend | None = None,
+) -> tuple[CastModel, dict[str, list[Voice]]]:
+    """Propose a cast for the script. Optionally accepts a pre-built
+    backend so the UI's shared backend-pool can be reused — avoids
+    loading MLX / Chatterbox twice in one process."""
     script = ScriptModel.model_validate(json.loads(script_path.read_text()))
-    backend = get_backend(backend_name)
+    if backend is None:
+        backend = get_backend(backend_name)
     voices = backend.list_voices()
 
     proposals: dict[str, list[Voice]] = {}

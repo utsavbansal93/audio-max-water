@@ -1,32 +1,44 @@
 # Audio Max Water
 
-**Convert a written story into a narrated full-cast audiobook.** Drop a story (prose or script format) into `stories/`, run one command, get an `.m4b` with a distinct voice per character — narrator, Gatsby, Daisy, whoever. Runs locally using open-source neural TTS. No API keys, no cloud, no per-minute billing. Built and tuned primarily on Apple Silicon; see *Modifying for your system* below for Linux / NVIDIA / CPU-only setups.
+**Convert a written story into a narrated full-cast audiobook.** Drop a book (plain text, Markdown, Word, EPUB, or PDF) into the pipeline, run one command, get an `.m4b` — or an Audio-EPUB3 with synced text + audio — with a distinct voice per character. Runs locally using open-source neural TTS. Bring your own Anthropic or Gemini API key for the one LLM-driven step (parsing the source into a structured script); everything else is deterministic and offline. Built and tuned primarily on Apple Silicon; see *Modifying for your system* below for Linux / NVIDIA / CPU-only setups.
 
 ---
 
-## Quickstart (Apple Silicon Mac)
+## Quickstart — one command, any supported input (Apple Silicon Mac)
 
 ```bash
 git clone https://github.com/utsavbansal93/audio-max-water
 cd audio-max-water
 brew install python@3.12 ffmpeg espeak-ng
 python3.12 -m venv .venv
-.venv/bin/pip install -e .
+.venv/bin/pip install -e '.[ingest,llm]'
 
-# 1. Put your story at stories/my_story.md
-# 2. Parse it into a script (see "Source formats" below for the expected shape)
-# 3. Render + QA + package + append a benchmark row:
-.venv/bin/python -m pipeline.bench \
-    --script build/script.json \
-    --cast   cast.json \
-    --build  build \
-    --target "my_story ch01" \
-    --notes  "first render"
+# One LLM call is needed to parse the source into a structured script.
+# Export ONE of these — pick your provider:
+export ANTHROPIC_API_KEY=sk-ant-...        # Anthropic (default)
+# export GEMINI_API_KEY=AI...              # or Gemini (add --provider gemini)
 
-# Output: out/<Title>.m4b
+.venv/bin/python -m pipeline.run \
+    --in  stories/pp_final_reconciliation.md \
+    --out out/ \
+    --format m4b               # or: epub3  (text+audio synced ebook)
+# Optional:
+#   --cover  path/to/cover.jpg # embed cover art in the output
+#   --backend kokoro           # override config.yaml TTS backend
+#   --provider gemini          # use Gemini instead of Anthropic
+#   --no-whisper               # skip Whisper round-trip QA (faster)
+
+# Output: out/<Title>.m4b  (or <Title>.epub for audio-EPUB3)
+# Logs:   build/<input-stem>/run.log  (full traceback on any failure)
 ```
 
 The first run downloads the Kokoro-82M weights (~300 MB) via Hugging Face.
+
+**Supported inputs.** `.txt`, `.md`, `.docx`, `.epub`, `.pdf`. For Kindle `.mobi`, export to `.epub` via Calibre first (one click).
+
+**Output formats.**
+- **`.m4b`** — standard audiobook with chapter markers. Plays in Apple Books, Audiobookshelf, VLC, Plex, any `.m4b`-aware player. Optional cover art embedded via ffmpeg.
+- **`.epub` (Audio-EPUB3)** — EPUB3 package with [SMIL Media Overlays](https://www.w3.org/TR/epub-33/#sec-media-overlays): text + synchronized audio, so Thorium / Apple Books / VoiceDream highlight each paragraph as its audio plays. Graceful degradation on non-SMIL readers (shows as a clean text ebook with embedded audio tracks).
 
 ---
 
@@ -65,15 +77,55 @@ Speaker labels (`Gatsby:`, `Daisy:`) are stripped by the validator. Parenthetica
 
 ## How it works
 
-Five stages, all in `pipeline/`:
+Six stages, all in `pipeline/`, chained by `pipeline/run.py`:
 
-1. **Parse** — Claude Opus converts the story into `script.json` (speaker, text, emotion per line). Validates byte-verbatim fidelity to the source.
-2. **Cast** — maps each character to a voice. `cast.json` is authoritative and reused across chapters so voices stay consistent.
-3. **Render** — for each line, looks up the voice, calls the TTS backend, caches the WAV keyed by content hash (so re-rendering unchanged lines is free).
-4. **Stitch** — concatenates per-line WAVs with emotion-aware silence gaps into one chapter MP3.
-5. **Package** — produces an `.m4b` with chapter markers, ready for Apple Books / `.m4b`-aware players.
+1. **Ingest** — `pipeline/ingest/` reads the source file (`.txt`, `.md`, `.docx`, `.epub`, `.pdf`) and normalizes it into a canonical markdown representation. One ingestor per format; all share an `Ingestor` ABC + `RawStory` intermediate. Deterministic, offline.
+2. **Parse** — `pipeline/parse.py` sends the canonical source to your LLM provider (Anthropic or Gemini, via `llm/`) with `prompts/parse_story.md` as the system prompt. Result is `script.json` — speaker, text, and emotion per line. Validates byte-verbatim fidelity via the existing faithful-wording validator; retries once on divergence with targeted context.
+3. **Cast** — maps each character to a voice. `cast.json` is authoritative and reused across chapters so voices stay consistent. `pipeline.run` auto-approves rank-1 per character; override manually via `pipeline.cast --swap` if you want to change voices after listening.
+4. **Render** — for each line, looks up the voice, calls the TTS backend, caches the WAV keyed by content hash (so re-rendering unchanged lines is free).
+5. **QA** — `pipeline/qa.py` runs signal-level checks (duration, peak, RMS, pacing, per-voice loudness consistency) + optional Whisper round-trip (gracefully skipped when `faster-whisper` isn't installed).
+6. **Package** — `pipeline/package.py` dispatches to `.m4b` (ffmpeg + chapter markers + optional attached_pic cover) or audio-EPUB3 (`pipeline/epub3.py`, SMIL Media Overlays + per-line timing).
 
-See `DECISIONS.md` for the architectural reasoning behind each stage.
+See `DECISIONS.md` (entries #0021–#0025 cover the Phase 1 orchestrator refactor) for the architectural reasoning behind each stage.
+
+---
+
+## Web UI (Phase 2)
+
+Start the local web UI instead of (or alongside) the CLI:
+
+```bash
+.venv/bin/pip install -e '.[ui]'
+.venv/bin/python -m pipeline.serve --mode ui        # opens http://127.0.0.1:8765
+# or, for Claude Code integration via MCP (stdio):
+.venv/bin/python -m pipeline.serve --mode mcp
+```
+
+The UI's five-screen flow mirrors the CLI: **Upload → Voices → Options → Rendering → Done**. Settings lives at `/settings` (provider + API key + defaults). History lives at `/history` — every job is persisted to `build/_jobs/<job_id>.json` so it survives server restarts. Failed or interrupted jobs get a **Resume** action that restarts from the last completed stage (parse / cast / render are all individually cacheable). Progress streams via Server-Sent Events — each pipeline stage shows as a pill (pending / active / done / error) with a live sub-progress bar during render.
+
+EPUB inputs skip front-matter (cover, title page, copyright, table of contents, colophon, index) and start from the first piece of real content — preface, dedication, foreword, introduction, prologue, or Chapter 1. A one-line warning in the log lists what was skipped.
+
+---
+
+## Advanced: driving individual stages
+
+The orchestrator is a convenience; the underlying modules are still separately invokable for surgical work.
+
+```bash
+# Parse only — useful if you want to hand-edit script.json before rendering
+.venv/bin/python -m pipeline.parse --in stories/my_story.md --build build_my_story
+
+# Cast with interactive auditions (old flow)
+.venv/bin/python -m pipeline.cast --propose                # top-3 voices per character + audition samples
+.venv/bin/python -m pipeline.cast --swap Darcy 2           # promote rank-2 for Darcy
+.venv/bin/python -m pipeline.cast --approve                # freeze cast.json
+
+# Render + QA + benchmark row (historical flow; still works)
+.venv/bin/python -m pipeline.bench --target "my_story ch01" --notes "baseline"
+
+# Package an existing build into another format without re-rendering
+.venv/bin/python -m pipeline.package --build build_my_story --format epub3 --out out/
+```
 
 ---
 
@@ -157,6 +209,9 @@ This project was built and tuned on an M3 MacBook Air. These are the parts that 
 - **ffmpeg chapter markers missing in Apple Books** — re-import the `.m4b`; Books caches aggressively.
 - **Voices drift across chapters** — `cast.json` was regenerated. It's the source of truth; recover from git and render again.
 - **A line sounds wrong** — rerunning `pipeline.render` only re-synthesizes lines whose content hash changed, so edit `script.json` for that line and re-render; other lines reuse their cached WAVs.
+- **"MissingDependency: X needs Y which is not installed"** — the message includes the exact `pip install` command. Run it and retry. Required deps (ingest for the format you used, LLM SDK for parse) block the run; optional ones (Whisper QA) are auto-skipped with a warning and the render still ships.
+- **"ANTHROPIC_API_KEY not set"** — `pipeline.run` needs an LLM key for the parse step only. Export `ANTHROPIC_API_KEY` or switch to Gemini with `--provider gemini` + `GEMINI_API_KEY`. Everything after parse is LLM-free.
+- **Everything else** — check `build/<input-stem>/run.log` for the full traceback. The console shows a one-line summary; the file has the stack.
 
 ---
 

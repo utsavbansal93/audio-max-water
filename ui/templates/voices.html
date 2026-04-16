@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Voices — {{ job.title }}{% endblock %}
+{% block content %}
+<section class="voices-page">
+  <header class="page-header">
+    <h1 class="page-title">Voices</h1>
+    <p class="caption muted">{{ job.title }} · {{ job.n_chapters }} chapter{{ "s" if job.n_chapters != 1 else "" }} · {{ job.n_lines }} lines</p>
+  </header>
+
+  {% set narrator = namespace(c=None) %}
+  {% set mains = [] %}
+  {% set minors = [] %}
+  {% for c in job.characters %}
+    {% if c.name == "narrator" %}
+      {% set narrator.c = c %}
+    {% elif c.n_lines >= 5 %}
+      {% set _ = mains.append(c) %}
+    {% else %}
+      {% set _ = minors.append(c) %}
+    {% endif %}
+  {% endfor %}
+
+  <ol class="voice-list">
+    {% if narrator.c %}
+      {% set c = narrator.c %}
+      <li class="voice-row voice-row--narrator" data-character="{{ c.name }}">
+        <div class="voice-meta">
+          <h2 class="char-name">Narrator</h2>
+          <p class="caption muted">{{ c.personality or "third-person storyteller" }} · {{ c.n_lines }} lines</p>
+        </div>
+        <button type="button" class="voice-chip" data-character="{{ c.name }}" data-voice="{{ c.current_voice }}">
+          <span class="chip-label">{{ c.current_voice }}</span>
+          <span class="chip-play" aria-hidden="true">▶</span>
+        </button>
+      </li>
+    {% endif %}
+
+    {% for c in mains %}
+      <li class="voice-row" data-character="{{ c.name }}">
+        <div class="voice-meta">
+          <h2 class="char-name">{{ c.name }}</h2>
+          <p class="caption muted">{{ c.personality or "" }}{% if c.gender != "neutral" %} · {{ c.gender }}{% endif %}{% if c.accent and c.accent != "unspecified" %} · {{ c.accent }}{% endif %} · {{ c.n_lines }} line{{ "s" if c.n_lines != 1 else "" }}</p>
+        </div>
+        <button type="button" class="voice-chip" data-character="{{ c.name }}" data-voice="{{ c.current_voice }}">
+          <span class="chip-label">{{ c.current_voice }}</span>
+          <span class="chip-play" aria-hidden="true">▶</span>
+        </button>
+      </li>
+    {% endfor %}
+
+    {% if minors %}
+      <li class="voice-row voice-row--minors">
+        <details>
+          <summary>
+            <div class="voice-meta">
+              <h2 class="char-name caption">+ {{ minors|length }} more character{{ "s" if minors|length != 1 else "" }}</h2>
+              <p class="caption muted">using defaults — tap to review</p>
+            </div>
+          </summary>
+          <ol class="voice-list voice-list--nested">
+            {% for c in minors %}
+              <li class="voice-row" data-character="{{ c.name }}">
+                <div class="voice-meta">
+                  <h3 class="char-name">{{ c.name }}</h3>
+                  <p class="caption muted">{{ c.n_lines }} line{{ "s" if c.n_lines != 1 else "" }}</p>
+                </div>
+                <button type="button" class="voice-chip" data-character="{{ c.name }}" data-voice="{{ c.current_voice }}">
+                  <span class="chip-label">{{ c.current_voice }}</span>
+                  <span class="chip-play" aria-hidden="true">▶</span>
+                </button>
+              </li>
+            {% endfor %}
+          </ol>
+        </details>
+      </li>
+    {% endif %}
+  </ol>
+
+  <div class="action-row action-row--sticky">
+    <a href="/" class="btn-ghost">Cancel</a>
+    <a href="/options/{{ job.job_id }}" class="btn-primary">Next: Options →</a>
+  </div>
+</section>
+
+<!-- Voice picker sheet (modal) -->
+<dialog id="voice-sheet" class="sheet" aria-labelledby="sheet-title">
+  <header class="sheet-header">
+    <h2 id="sheet-title">Pick a voice</h2>
+    <p id="sheet-subtitle" class="caption muted"></p>
+    <button type="button" class="sheet-close" data-close-sheet aria-label="Close">×</button>
+  </header>
+  <p class="sheet-sample caption" id="sheet-sample"></p>
+  <ol id="sheet-voices" class="sheet-voices" role="listbox"></ol>
+</dialog>
+
+<script id="job-data" type="application/json">{{ job | tojson }}</script>
+<script id="settings-data" type="application/json">{{ settings | tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script>
+  AMW.initVoicePicker({
+    jobId: "{{ job.job_id }}",
+    backend: "{{ job.backend }}",
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Reading the book — Audio Max Water{% endblock %}
+{% block content %}
+<section class="centered pipeline-page">
+  <header class="page-header--tight">
+    <h1 class="stage-title" id="stage-title">Preparing</h1>
+    <p id="progress-message" class="caption muted">{{ job.input_filename }} · starting up…</p>
+    <p id="progress-meta" class="caption muted">&nbsp;</p>
+  </header>
+
+  {% with stages = job.stages %}
+    {% include "_stage_tracker.html" %}
+  {% endwith %}
+
+  <div class="progress-bar" role="progressbar" aria-label="Overall progress">
+    <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+  </div>
+
+  <details class="advanced">
+    <summary class="caption">Technical details</summary>
+    <pre id="log" class="log"></pre>
+  </details>
+
+  <div class="action-row" style="margin-top: 32px;">
+    <a href="/history" class="btn-ghost btn-sm">View history</a>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  AMW.subscribeProgress("{{ job.job_id }}", {
+    doneRedirect: "/voices/{{ job.job_id }}",
+    terminalStages: ["cast"],
+  });
+</script>
+{% endblock %}

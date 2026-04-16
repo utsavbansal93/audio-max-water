@@ -161,7 +161,15 @@ def whisper_roundtrip(chapter_mp3: Path, expected_text: str, model_name: str = "
     try:
         from faster_whisper import WhisperModel
     except ImportError as e:
-        raise RuntimeError("faster-whisper not installed. Run: .venv/bin/pip install faster-whisper") from e
+        from pipeline._errors import MissingDependency
+        # required=False — Whisper QA is an optional post-render check;
+        # the orchestrator can log + skip rather than aborting the whole run.
+        raise MissingDependency(
+            package="faster-whisper",
+            feature="Whisper round-trip QA",
+            install=".venv/bin/pip install faster-whisper",
+            required=False,
+        ) from e
 
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
     segments, _info = model.transcribe(str(chapter_mp3), beam_size=1, language="en")

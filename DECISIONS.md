@@ -353,3 +353,185 @@ The stage-direction-to-emotion mapping is where the format earns its keep: the u
 - Introduces a runtime dep on `psutil>=7.0`; small (~1 MB installed), no native compile needed.
 
 **Retrospective lesson.** *Prefer observation-based enforcement over static rules where cheap.* The watchdog checks actual conditions at runtime instead of asserting what should be true in general. That's both more robust (catches situations the rule-author didn't imagine) and self-documenting (the error message teaches the rule). When this kind of instrument is cheap to build — here, 50 LOC and one library — prefer it to rules humans have to remember.
+
+---
+
+## 0021 · 2026-04-16 · `pipeline.run` orchestrator replaces the manual Claude-in-loop parse step
+
+**Context.** Until now, the pipeline required a human to drive the parse step: copy the story into a Claude chat, paste the system prompt from `prompts/parse_story.md`, wait, paste the JSON output into `build/script.json`, then run the deterministic stages (cast / render / qa / package). User wanted a single-command end-to-end flow that works without Claude Code sitting in the loop — both so they can ship this to others and so they (via Claude Code) can orchestrate an entire book without the paste ceremony.
+
+**Options considered.**
+- **Thin CLI wrapper that calls `pipeline.bench` after a manual parse** — doesn't solve the problem; parsing is still manual.
+- **Callable Claude via `claude_agent_sdk`** — would work, but locks the project into Anthropic's tooling. User explicitly asked for Anthropic OR Gemini support.
+- **Programmatic LLM call via provider-specific SDKs (Anthropic / Gemini) abstracted behind an `LLMProvider` ABC.** Orchestrator (`pipeline.run`) calls the provider with the existing `parse_story.md` prompt verbatim, parses JSON, runs the faithful-wording validator, retries once on divergence. The existing deterministic stages (render / qa / package) are invoked directly — no duplication, just wiring.
+
+**Decision.** Third option. `pipeline/run.py` orchestrates: ingest → parse → cast (auto-propose + auto-approve rank-1) → render → qa → package. The rest of the pipeline stays untouched — `pipeline/render.py`, `pipeline/cast.py`, `pipeline/package.py`, `pipeline/qa.py`, `pipeline/validate.py`, `pipeline/_memory.py` are reused without changes (except package.py's cover/format additions, which are additive). Auto-approved cast is a simple rank-1 pick from the existing heuristic in `cast.py::_score` — users who want to swap can still do so via the existing CLI. The human is out of the critical path but not out of the kit.
+
+**Consequences.**
+- End-to-end run is now one command. Re-runs are cheap thanks to content-hash caching at every stage (parse caches on `source.md` equality; render caches on line hash; package rebuilds are quick).
+- Cost: at least one LLM call per new story, which is a real dollar cost. Cached re-renders are free; only the first run pays.
+- Auto-approve is coarse: if the heuristic picks wrong, the user has to intervene after the fact (listen to `build/<story>/cast_samples/`, run `pipeline.cast --swap`, re-run). A confidence-threshold follow-up is in BACKLOG — auto-approve only when rank-1 beats rank-2 by a margin; otherwise pause.
+- The "Claude Code can orchestrate" affordance is preserved: I (Claude Code) can still call the individual pipeline modules directly when that's ergonomic; the orchestrator is just a nice default for everyone else.
+
+---
+
+## 0022 · 2026-04-16 · `Ingestor` ABC + per-format ingest package
+
+**Context.** Phase 1 accepts raw text, `.md`, `.docx`, `.pdf`, `.epub` inputs. The question was how to structure the format-specific parsing.
+
+**Options considered.**
+- **One big `pipeline/ingest.py` with if/elif on file extension.** Simple, but every new format touches the same file; hard to test in isolation.
+- **Plugin system with entry points** — overkill for 5 formats.
+- **ABC + per-format module** matching the `TTSBackend` pattern we already use in `tts/`.
+
+**Decision.** The ABC + per-format module pattern. `pipeline/ingest/base.py` defines `Ingestor` + `RawStory` / `RawChapter` dataclasses + shared text-normalization helpers; each format gets one file (`text_ingestor.py`, etc.); `pipeline/ingest/__init__.py::get_ingestor(path)` dispatches on extension. Mirrors `tts.get_backend` exactly so the two abstractions feel the same to maintain.
+
+**Consequences.**
+- Adding a new format = one file + one line in the factory, same as adding a TTS backend.
+- Per-format deps (python-docx, pdfplumber, ebooklib) import lazily inside each ingestor so an install without the `[ingest]` extra still runs `.txt`/`.md`.
+- `RawStory.to_source_md()` produces canonical markdown that serves BOTH as the LLM parse input AND as the validator's reference text. Single source of truth for "what the source says" regardless of original format — which means the faithful-wording check works uniformly across formats.
+- `.mobi` is deferred: no clean pure-Python option as of April 2026; filed in BACKLOG.
+
+---
+
+## 0023 · 2026-04-16 · `LLMProvider` ABC with Anthropic primary, Gemini optional
+
+**Context.** The orchestrator's parse step needs an LLM. User wants provider choice (primary Anthropic, alternative Gemini) so non-Anthropic users aren't excluded. Phase 2 will add a third provider (MCP sampling) — so the pattern needed to accommodate multiple concrete implementations from day one.
+
+**Options considered.**
+- **Hard-code the Anthropic SDK, add Gemini later** — fastest path, accumulates refactor debt.
+- **Generic wrapper library (LiteLLM, etc.)** — adds a heavy dependency for a feature we use in one place.
+- **Thin ABC modeled on `TTSBackend`** — same pattern, same code shape, swappable in one factory function.
+
+**Decision.** Third option. `llm/base.py::LLMProvider` has one method (`complete(system, user, *, model, max_tokens)`) + `name` / `default_model` class attrs. `llm/anthropic_provider.py`, `llm/gemini_provider.py`, and (Phase 2) `llm/mcp_sampling_provider.py` implement it. `llm/__init__.py::get_provider(name)` dispatches. API keys come from env vars only in Phase 1 (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`); no keys in config, no keys on CLI, no keys on disk.
+
+**Consequences.**
+- Swapping providers is a one-line config change (`config.yaml` `llm.provider`) or one CLI flag (`--provider gemini`).
+- The two provider modules have nearly identical structure — they differ only in the SDK call. Easy to maintain; easy to add a third (MCP sampling lands in Phase 2).
+- Missing SDKs raise `MissingDependency` with the exact `pip install -e '.[llm]'` (or `[llm-gemini]`) command — orchestrator fails fast with an actionable message rather than a bare `ModuleNotFoundError`.
+
+---
+
+## 0024 · 2026-04-16 · Audio-EPUB3 (SMIL Media Overlays) as second output format
+
+**Context.** User wants a second output format alongside `.m4b`. They specifically said "audio-EPUB3" — an EPUB3 package with synchronized text + audio, such that a compatible reader (Apple Books, Thorium, VoiceDream) highlights each paragraph as its audio plays. Not a plain EPUB ebook; not a plain audio file.
+
+**Options considered.**
+- **Ship plain EPUB3 (text only) as a secondary export.** Misreads the user ask.
+- **Ship audio-EPUB3 via `ebooklib`'s built-in SMIL support.** Ebooklib's SMIL support is thin (documented as experimental); would need a lot of monkey-patching.
+- **Write the EPUB by hand with `zipfile` + string templates for OPF / XHTML / SMIL / nav.** EPUB3 structure is small enough to verify against the spec; templates are ~300 lines total; no new dependency.
+
+**Decision.** Third option. `pipeline/epub3.py::build_audio_epub3()` reads `script.json` for chapter/line structure, reads `build/ch<NN>/concat.txt` for per-line WAV durations (already computed during render — no extra synthesis), builds XHTML with `<p id="line_NNNN">` per line, builds SMIL with `<par>` pairs that map each `p` to a `clipBegin`/`clipEnd` in the chapter MP3, assembles OPF manifest + nav + container.xml, and zips via stdlib `zipfile`. Optional cover image goes into the manifest as `properties="cover-image"`.
+
+**Consequences.**
+- No new dependency (uses stdlib `zipfile` + `wave` for WAV duration).
+- Timing accuracy is perfect: durations come from the actual WAV files the reader will play, not from estimates. First-line-highlighted-when-first-word-plays behavior.
+- The chapter MP3 must remain time-aligned with its concat — which it is, since render caches per-line WAVs and stitches deterministically.
+- Scene-break lines (`text == "---"`) are rendered as `<hr/>` in XHTML and skipped in SMIL — a break has no spoken content to highlight.
+- Users of non-SMIL-aware EPUB readers see a clean text ebook + downloadable audio; users of SMIL-aware readers get the synced experience. Graceful degradation.
+
+---
+
+## 0025 · 2026-04-16 · `MissingDependency` + structured logging as the cross-cutting error UX
+
+**Context.** User flagged mid-build: "If let's say a particular package is not installed, let the interface call it (e.g., it was expecting a whisper thing to take an action but it wasn't available). Also console logging and error logging should be there for error observation and logic fail issues." Two requirements: (1) missing optional deps shouldn't just crash — the system should know which are required vs optional and tell the user what to do; (2) observability for diagnosis after failures.
+
+**Options considered for missing-dep handling.**
+- **Bare `RuntimeError` with install instructions in the message.** What we had. Works but callers can't programmatically distinguish "install this" from "other failure" — the Phase 2 UI would have to regex the message.
+- **`ImportError` at module load time.** Breaks `pipeline/run.py` imports even when the user's story doesn't need the missing format.
+- **Typed `MissingDependency` exception with `required: bool` field.** Callers can catch it specifically; optional missing deps can be skipped with a log line; required ones hard-fail.
+
+**Options considered for logging.**
+- **`print` + stderr, like today.** Fine for CLI; nothing structured for the UI to consume.
+- **Full structured JSON logging.** Overkill for a local-first tool.
+- **Stdlib `logging` with console (INFO, human-friendly) + file (DEBUG, full tracebacks) handlers.** Standard shape; zero new deps; Phase 2 UI can tail the file handler for in-browser status display.
+
+**Decision.** Both: `pipeline/_errors.py::MissingDependency(package, feature, install, required)` + `pipeline/_logging.py::configure_logging(build_dir=...)` emitting to console + `<build_dir>/run.log`. The orchestrator treats required missing deps as fatal (exit 2 with the install command) and optional ones as graceful skips with a WARNING log. Every pipeline stage uses `logging.getLogger(__name__)` — no `print()` inside stage modules.
+
+**Consequences.**
+- Whisper QA now skips cleanly when `faster-whisper` isn't installed — the render still ships, the user sees a one-line "whisper skipped — to enable: <cmd>" note in the log.
+- Each run leaves a `<build_dir>/run.log` with full tracebacks — when something blows up, the console shows a one-line summary and the file has the stack.
+- Phase 2 UI gets a clean contract: catch `MissingDependency`, show an "Install <package>" button that runs `e.install`; for other failures, show the last N lines of `run.log` in a "technical details" disclosure.
+- The pattern is load-bearing for the Phase 2 "Use my Claude app" provider option too: if the MCP sampling provider can't reach a connected client, it raises `MissingDependency(required=False)` and the UI falls back to the configured API key.
+
+---
+
+## 0026 · 2026-04-16 · Web UI as plain FastAPI + Jinja2 + SSE, no JS build
+
+**Context.** Phase 2 needed a local web UI. The plan (`.claude/plans/jaunty-popping-kite.md`) called for Apple-HIG design, five-screen flow, voice picker with audio auditions, progress streaming. Options were considered:
+
+**Options considered.**
+- **React/Vite/Vue SPA with a JSON API backend.** Richest interactivity ceiling, but pulls in node_modules (40+ MB), a build step, and two-language project. Overkill for a local-first tool that one person uses at a time.
+- **HTMX + server-rendered Jinja2 partials.** Server-side truth, small surface, zero JS build. HTMX swaps are fine for form submissions; but voice picker + SSE progress want imperative JS anyway.
+- **FastAPI + Jinja2 + vanilla JS (no framework).** Server renders the templates; ~300 lines of vanilla JS handles drag & drop, SSE progress subscriptions, and the voice picker `<dialog>` sheet. No build, no package.json, no node_modules. Works in every modern browser without polyfills.
+- **Streamlit / Gradio.** Trivial to stand up but opinionated layout, no way to achieve the Apple-HIG look the user asked for; also heavier dependency footprint.
+
+**Decision.** FastAPI + Jinja2 + vanilla JS. `ui/app.py` holds all routes (pages + API + SSE stream) in one file — a single local-user app doesn't need `routes/` splitting. `ui/templates/` has 8 templates that extend a shared `base.html`. `ui/static/{style.css, app.js}` is the entire front-end. No build step; `python -m pipeline.serve` is everything.
+
+**Consequences.**
+- Install footprint adds FastAPI + uvicorn + Jinja2 + python-multipart + mcp (~15 MB). No node_modules.
+- Front-end complexity ceiling is low: no state management, no routing, no component tree. For this app's needs (file upload, voice picker modal, SSE progress bar) that ceiling is plenty.
+- Accessibility baseline is fine: semantic HTML + `<dialog>` + `prefers-reduced-motion` CSS queries + ≥44pt tap targets. No accessibility debt from React hydration patterns.
+- Deploying the UI remotely would be easy (uvicorn + Docker) if that ever becomes a thing, but Phase 2 scope explicitly excludes that.
+
+---
+
+## 0027 · 2026-04-16 · Process-wide backend pool for UI (can't load MLX twice)
+
+**Context.** First end-to-end smoke test of the UI failed with `[Errno 32] Broken pipe` from `mlx-kokoro.synthesize()` whenever the audition endpoint fired after cast proposal completed. Cause: `pipeline/cast.py::propose` called `tts.get_backend("mlx-kokoro")` and held an MLX instance; my new `ui/services/audition.py` called `tts.get_backend("mlx-kokoro")` independently and got a second instance. MLX doesn't tolerate two live pipeline instances in one Python process — the second load corrupts something in the first's state, and the first instance's subsequent synth calls hit a broken internal pipe.
+
+**Options considered.**
+- **Serialize all synthesis through one lock** — prevents concurrent calls but still lets two instances exist, and the broken-pipe happens at load time, not during a synth race.
+- **Make `tts.get_backend` globally memoizing** — cleanest but changes CLI semantics project-wide (and CLI users intentionally load fresh instances between commands sometimes).
+- **Process-wide pool module in the UI layer** — `ui/services/backend_pool.py` holds a dict keyed by backend name, protected by a lock. Cast, audition, and render all call `backend_pool.get_backend()` so the pool has exactly one instance per backend type per UI process. CLI is unaffected.
+
+**Decision.** Process-wide pool in the UI layer. `pipeline/cast.py::propose` gained an optional `backend=` kwarg so the UI can pass its pooled instance; `pipeline/render.py::render_all` gained an optional `backends=` kwarg so the UI can seed render with the same pool. Both kwargs default to None, preserving CLI behavior.
+
+**Consequences.**
+- UI process loads each backend exactly once per lifetime. MLX stays happy.
+- CLI and `pipeline.run` paths are unchanged — they still load fresh and release at process exit.
+- If a user switches backends mid-session via Settings, the previously-loaded backend stays in memory until the server is restarted. Acceptable for a local tool; filed as a low-priority cleanup.
+- The synth lock is a coarse mutex — no two synth calls run in parallel within the UI. That matches MLX's actual thread-safety guarantees and keeps the diagnosis simple when something breaks.
+
+---
+
+## 0028 · 2026-04-16 · MCP server as separate invocation, not combined with UI
+
+**Context.** The plan had the web UI and MCP server running in one Python process, so the UI's "Use my Claude app" provider option could use MCP `sampling/createMessage` against a connected Claude client. In implementation, two realities collided:
+
+- Claude Code / Claude Desktop spawn MCP servers via **stdio** — the server's stdin/stdout *is* the protocol. uvicorn also owns stdout for its own logging.
+- Sampling requires an active MCP `RequestContext` with a connected client. The web UI has no such context because it's not running as an MCP server.
+
+Combining them in one process means either (a) running the MCP server over an HTTP/SSE transport (Claude Code supports this) and routing sampling through the UI's own server instance, or (b) juggling two event loops with separate stdio handling. Both are real work.
+
+**Options considered.**
+- **Ship combined mode now** — significant complexity: HTTP/SSE MCP transport, managing dual lifecycles, registering the HTTP MCP URL in the user's Claude config, handling dropped-client cases during mid-parse.
+- **Ship them as separate invocations for Phase 2, defer combined mode** — `python -m pipeline.serve --mode ui` for the browser experience (API-key providers), `python -m pipeline.serve --mode mcp` for Claude Code (stdio, spawn-by-Claude model, tool-based UX). The "Use my Claude app" provider in the UI is present but raises `ConfigurationError` with setup-instructions; it'll light up when combined mode lands.
+- **Drop "Use my Claude app" from the UI entirely** — closes the door on sampling support; would require a settings-UI change if it ever comes back.
+
+**Decision.** Second option: ship separate-invocation Phase 2, stub the MCP-sampling provider, document the limitation in the stub's `ConfigurationError.fix` field and in README. Combined mode filed in BACKLOG with the clear requirement: "HTTP/SSE transport for MCP, so the UI process can both host the MCP server AND serve browsers, with sampling routed through a single context."
+
+**Consequences.**
+- Phase 2 UI works today for anyone with an Anthropic or Gemini API key. That's the majority of users including the primary one.
+- Claude Code users who want tool-based interaction get a cleanly-designed MCP server; they don't touch the web UI at all.
+- The one group not yet served is Claude Code users who want the web UI AND want the UI to call Claude for parsing. Their current path is: use the UI with an Anthropic key, OR skip the UI and let Claude Code drive via MCP. Not a hard block.
+- The stub provider is useful as a signpost — users who select it in Settings get a clear message pointing at the two working alternatives. Much better than a silent crash.
+
+---
+
+## 0029 · 2026-04-16 · `on_progress` callback on render, threadsafe SSE bridge
+
+**Context.** The UI needed live render progress (line-by-line during the long render stage) without blocking the uvicorn event loop. The render stage synthesizes through MLX / Chatterbox, each call being CPU-bound (~100–500 ms) and unsafe to run on the asyncio loop.
+
+**Options considered.**
+- **Subprocess the entire render** — spawn `python -m pipeline.run`, parse stdout lines for progress. Crude, needs log parsing, doesn't share the backend pool (which is exactly the Phase 2 fix for MLX double-load).
+- **Refactor render to be async all the way down** — huge change; MLX/Chatterbox aren't async-native and wrapping them wouldn't actually help.
+- **Optional `on_progress: Callable[[ProgressEvent], None]` kwarg on `render_chapter` / `render_all` / orchestrator.** Default None = silent. The UI provides a callback that does `loop.call_soon_threadsafe(queue.put_nowait, event)` from the worker thread to a per-job `asyncio.Queue`. The SSE endpoint awaits the queue. Pipeline never imports asyncio.
+
+**Decision.** Third option. `pipeline/_events.py::ProgressEvent` is a pure dataclass with a `to_dict()` for JSON serialization; `emit(cb, event)` is fire-and-forget (callback exceptions swallowed — progress reporting mustn't break a render). `ui/services/progress.py::make_threadsafe_callback` bridges a worker thread to an asyncio.Queue; `stream_events()` converts queue items to SSE frames with 15 s heartbeats and closes on terminal `package:done` / `error:error` events.
+
+**Consequences.**
+- Pipeline modules stay synchronous and portable. The web UI is purely additive — it provides a callback, and the existing render loop emits events at chapter start, each line, and chapter end. CLI behavior with no callback is unchanged.
+- SSE from the UI is simple: one endpoint (`/events/<job_id>`), one queue per job, heartbeats keep long-lived connections alive. No WebSocket complexity.
+- The callback is invoked from the worker thread; callers that do DOM work (the browser) only see JSON events serialized by the SSE handler — there's no thread-safety concern on the browser side.
+- Terminal events carry an optional `extra.redirect` URL so the client navigates automatically at stage completion — the UI never polls `/api/job/<id>`.

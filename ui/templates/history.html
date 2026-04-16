@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}History — Audio Max Water{% endblock %}
+{% block content %}
+<section class="history-page">
+  <header class="page-header">
+    <h1 class="page-title">History</h1>
+    <p class="caption muted">{{ jobs|length }} job{{ "s" if jobs|length != 1 else "" }} on record. Resume interrupted renders, re-download finished audiobooks, or tidy up.</p>
+  </header>
+
+  {% if not jobs %}
+    <div class="empty-state">
+      <p class="caption muted">Nothing here yet.</p>
+      <a href="/" class="btn-primary">Start a new conversion</a>
+    </div>
+  {% else %}
+    <ol class="history-list">
+      {% for j in jobs %}
+        <li class="history-item history-item--{{ j.status }}">
+          <div class="history-meta">
+            <h2 class="history-title">{{ j.title or j.input_filename or "Untitled job" }}</h2>
+            <p class="caption muted">
+              {{ j.input_filename or "—" }} ·
+              {{ j.provider }} · {{ j.backend }} ·
+              {% if j.output_format == 'm4b' %}Audiobook{% else %}Ebook with synced audio{% endif %}
+            </p>
+            <div class="history-stages mini" aria-hidden="true">
+              {% for s in j.stages %}
+                <span class="stage-dot stage-dot--{{ s.status }}" title="{{ s.key }}: {{ s.status }}{% if s.message %} — {{ s.message }}{% endif %}"></span>
+              {% endfor %}
+            </div>
+            {% if j.error %}
+              <pre class="history-error caption">{{ j.error }}</pre>
+            {% endif %}
+          </div>
+
+          <div class="history-actions">
+            <span class="status-badge status-badge--{{ j.status }}">{{ j.status }}</span>
+            {% if j.resumable %}
+              <form action="/api/resume/{{ j.job_id }}" method="post" class="inline-form">
+                <button type="submit" class="btn-primary btn-sm">Resume</button>
+              </form>
+            {% endif %}
+            {% if j.has_output %}
+              <a href="/download/{{ j.job_id }}" class="btn-ghost btn-sm" download>Download</a>
+            {% endif %}
+            {% if j.status == "voices" or j.status == "rendering" or j.status == "done" %}
+              <a href="/done/{{ j.job_id }}" class="btn-ghost btn-sm">Open</a>
+            {% endif %}
+            <form action="/api/job/{{ j.job_id }}/delete" method="post" class="inline-form">
+              <input type="hidden" name="remove_build" value="false" />
+              <button type="submit" class="btn-ghost btn-sm icon-button" title="Delete record (keep files)">✕</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
+
+  <div class="action-row" style="margin-top: 48px;">
+    <a href="/" class="btn-ghost">← Back</a>
+  </div>
+</section>
+{% endblock %}

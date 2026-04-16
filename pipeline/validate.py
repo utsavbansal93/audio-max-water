@@ -25,7 +25,13 @@ def _normalize(s: str) -> str:
     against the reconstructed-from-script.json text.
 
     Rules:
-      - Markdown heading prefixes (`# `, `## `) stripped; heading text kept.
+      - H2+ heading *lines* dropped entirely (structural chapter markers
+        emitted by `RawStory.to_source_md()` for multi-chapter stories;
+        they're JSON metadata, not spoken content).
+      - H1 heading prefix (`# `) stripped; heading text kept (matches the
+        existing convention where the book title is read aloud as the
+        narrator's opening line).
+      - *Italic by-line* (`*by Author*`) dropped.
       - Horizontal rules / scene separators dropped.
       - Speaker labels at line start (`Narrator:`, `Gatsby:`, `Mr. Darcy:`)
         stripped — they're attribution metadata, not spoken text.
@@ -37,7 +43,12 @@ def _normalize(s: str) -> str:
       - Whitespace collapsed.
       - Lowercased.
     """
-    s = re.sub(r"(?m)^\s*#{1,6}\s+", "", s)
+    # H2+ headings: drop the entire line (structural JSON metadata)
+    s = re.sub(r"(?m)^\s*#{2,6}\s+.*$", "", s)
+    # H1 heading prefix: strip `# ` but keep the text (book title is spoken)
+    s = re.sub(r"(?m)^\s*#\s+", "", s)
+    # Italic by-line (`*by Author*`)
+    s = re.sub(r"(?m)^\s*\*by\s+[^*]+\*\s*$", "", s)
     s = re.sub(r"(?m)^\s*[\*\-_]{3,}\s*$", "", s)
     s = _SPEAKER_LABEL_RE.sub("", s)
     s = _STAGE_DIRECTION_RE.sub(" ", s)
