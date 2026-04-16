@@ -39,15 +39,13 @@
               your Claude subscription does the work.
             </p>
             <p class="caption muted">
-              <strong>Setup, once:</strong> run
-              <code>python -m pipeline.serve --mode combined</code>,
-              then add this to <code>~/.claude/settings.json</code>:
+              <strong>Setup, once:</strong> run the server in combined mode, then register it with Claude Code:
             </p>
-            <pre class="inline-code">{
-  "mcpServers": {
-    "audio-max-water": {"url": "http://localhost:8765/mcp/sse"}
-  }
-}</pre>
+            <pre class="inline-code">python -m pipeline.serve --mode combined
+claude mcp add --transport sse audio-max-water http://localhost:8765/mcp/sse</pre>
+            <p class="caption muted">
+              <strong>Each time:</strong> have a Claude Code conversation open in this project directory while you use this UI — that conversation holds the MCP session open for sampling.
+            </p>
           </div>
         </label>
       </div>

@@ -107,23 +107,29 @@ Start the local web UI instead of (or alongside) the CLI:
 
 If you have Claude Code (or Claude Desktop), run the server in **combined mode** and configure your Claude client to connect over HTTP/SSE. The pipeline's one LLM call (parsing the source into a structured script) routes through your connected client via MCP sampling. No Anthropic / Gemini API key required — your Claude subscription does the work.
 
+**One-time setup:**
+
 ```bash
+# 1. Start the server in combined mode.
 .venv/bin/python -m pipeline.serve --mode combined
+
+# 2. Register the MCP server with Claude Code (adds an entry to
+#    ~/.claude.json scoped to this project directory).
+claude mcp add --transport sse audio-max-water http://localhost:8765/mcp/sse
 ```
 
-Then add to `~/.claude/settings.json`:
+Verify the server is registered and reachable:
 
-```json
-{
-  "mcpServers": {
-    "audio-max-water": {"url": "http://localhost:8765/mcp/sse"}
-  }
-}
+```bash
+claude mcp list
+# → audio-max-water: http://localhost:8765/mcp/sse (SSE) - ✓ Connected
 ```
 
-In the web UI, pick **Settings → Use my Claude app**. Upload a book. The parse stage asks your connected Claude client for the script; nothing else changes.
+**Each time you want to use it:** open a Claude Code conversation *in this project directory* and keep it open while you use the web UI. Claude Code only holds an MCP session open while a conversation is active — `claude mcp list`'s "✓ Connected" is a health probe, not a held session.
 
-If no client is connected when you upload, the UI shows a clear error pointing at this setup. No silent fallback — switch the provider to Anthropic / Gemini in Settings if you want API-key mode instead.
+**In the web UI:** Settings → *Use my Claude app*. Upload a book. The parse stage asks your open Claude Code for the script; the rest of the pipeline runs locally with no network calls.
+
+If no Claude Code conversation is open when you upload, the UI shows a clear error pointing at this setup. No silent fallback — switch to Anthropic / Gemini in Settings if you want API-key mode instead.
 
 The UI's five-screen flow mirrors the CLI: **Upload → Voices → Options → Rendering → Done**. Settings lives at `/settings` (provider + API key + defaults). History lives at `/history` — every job is persisted to `build/_jobs/<job_id>.json` so it survives server restarts. Failed or interrupted jobs get a **Resume** action that restarts from the last completed stage (parse / cast / render are all individually cacheable). Progress streams via Server-Sent Events — each pipeline stage shows as a pill (pending / active / done / error) with a live sub-progress bar during render.
 
