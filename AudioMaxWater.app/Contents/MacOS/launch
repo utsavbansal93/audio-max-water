@@ -1,0 +1,134 @@
+#!/bin/bash
+# AudioMaxWater.app — one-click launcher.
+#
+# Does three things in order:
+#   1. Starts the combined-mode server (UI + MCP/SSE) if not already up.
+#   2. Opens the web UI in the default browser.
+#   3. Opens Terminal.app, cd's into the project, runs `claude`, and
+#      sends `/mcp` to the resulting TUI so the MCP server loads and
+#      its session is actively held — the precondition for the UI's
+#      "Use my Claude app" provider to work via MCP sampling.
+#
+# Finder-launched apps have a minimal environment; we use absolute
+# paths for binaries we need and fall back to searching common
+# locations for `claude`. Logs go to ~/Library/Logs/AudioMaxWater*.log.
+
+set -u
+
+LOG="$HOME/Library/Logs/AudioMaxWater.log"
+SERVER_LOG="$HOME/Library/Logs/AudioMaxWater-server.log"
+mkdir -p "$(dirname "$LOG")"
+
+# Resolve project root from the .app location.
+#   <root>/AudioMaxWater.app/Contents/MacOS/launch
+APP_SUPPORT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_ROOT="$(cd "$APP_SUPPORT_DIR/../.." && pwd)"
+
+PORT=8765
+URL="http://127.0.0.1:$PORT/"
+VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
+
+alert() {
+  /usr/bin/osascript -e "display alert \"Audio Max Water\" message \"$1\""
+}
+
+{
+  echo ""
+  echo "=== $(date) launcher start ==="
+  echo "project root: $PROJECT_ROOT"
+
+  # --- 1. Start server if not already running ------------------------------
+  if /usr/bin/curl -s -o /dev/null -m 1 "$URL"; then
+    echo "server already up on $PORT — skipping start"
+  else
+    echo "no server on $PORT — starting..."
+    if [ ! -x "$VENV_PYTHON" ]; then
+      echo "ERROR: .venv not found at $VENV_PYTHON"
+      alert "Virtualenv not found. Run: python3.12 -m venv .venv && .venv/bin/pip install -e '.[ui,ingest,llm,metadata]'"
+      exit 1
+    fi
+    cd "$PROJECT_ROOT" || exit 1
+    /usr/bin/nohup "$VENV_PYTHON" -m pipeline.serve --mode combined --port "$PORT" \
+      > "$SERVER_LOG" 2>&1 &
+    SERVER_PID=$!
+    echo "server PID: $SERVER_PID  (log: $SERVER_LOG)"
+
+    # Wait up to 15 s for the server to respond.
+    UP=false
+    for i in $(seq 1 30); do
+      if /usr/bin/curl -s -o /dev/null -m 1 "$URL"; then
+        UP=true
+        echo "server ready after $((i * 500)) ms"
+        break
+      fi
+      sleep 0.5
+    done
+    if [ "$UP" = false ]; then
+      alert "Server didn't start within 15 s. See ~/Library/Logs/AudioMaxWater-server.log for details."
+      exit 1
+    fi
+  fi
+
+  # --- 2. Open browser ------------------------------------------------------
+  /usr/bin/open "$URL"
+  echo "opened $URL"
+
+  # --- 3. Open Terminal with claude + send /mcp -----------------------------
+  # Locate the claude binary. Finder-launched apps don't see the user's
+  # login shell PATH, so we search explicitly.
+  CLAUDE_BIN=""
+  for candidate in \
+      "$HOME/bin/claude" \
+      "/opt/homebrew/bin/claude" \
+      "/usr/local/bin/claude"
+  do
+    if [ -x "$candidate" ]; then
+      CLAUDE_BIN="$candidate"
+      break
+    fi
+  done
+  if [ -z "$CLAUDE_BIN" ]; then
+    # Last resort: ask a login shell.
+    CLAUDE_BIN="$(/bin/zsh -l -c 'command -v claude' 2>/dev/null || echo '')"
+  fi
+
+  if [ -z "$CLAUDE_BIN" ]; then
+    echo "claude CLI not found — user must open a Claude Code conversation manually"
+    /usr/bin/osascript -e 'display notification "Could not find the claude CLI. Open a Claude Code conversation in this project manually to enable MCP sampling." with title "Audio Max Water"'
+    exit 0
+  fi
+
+  echo "claude: $CLAUDE_BIN"
+
+  # AppleScript: open a Terminal window, run claude, wait for the TUI to
+  # initialize, send "/mcp" + Return so the MCP view loads and holds the
+  # session open.
+  #
+  # Sending keystrokes via System Events requires Accessibility permission
+  # for Terminal.app the first time. macOS will prompt.
+  /usr/bin/osascript <<APPLESCRIPT
+tell application "Terminal"
+    activate
+    do script "cd " & quoted form of "$PROJECT_ROOT" & " && " & quoted form of "$CLAUDE_BIN"
+end tell
+
+-- Give claude a moment to render its TUI before typing.
+delay 6
+
+tell application "System Events"
+    tell process "Terminal"
+        set frontmost to true
+    end tell
+    keystroke "/mcp"
+    delay 0.2
+    key code 36  -- Return
+end tell
+APPLESCRIPT
+  RC=$?
+  if [ "$RC" -ne 0 ]; then
+    echo "AppleScript exit=$RC — likely missing Accessibility permission for Terminal"
+    /usr/bin/osascript -e 'display notification "Terminal opened but could not send /mcp. Grant Accessibility permission in System Settings → Privacy & Security → Accessibility, then type /mcp manually." with title "Audio Max Water"'
+  fi
+
+  echo "=== launcher done ==="
+} >> "$LOG" 2>&1
