@@ -619,3 +619,37 @@ All image checks use MIME-type prefix (`image/`) rather than `ITEM_IMAGE`, worki
 - UI shows a 96×96 preview on the Options screen with "Using the cover from your file — upload a replacement below, or leave blank to keep this one." Visible default, one-click override.
 
 **Retrospective lesson.** *Implementing a spec requires testing against the spec's actual implementations.* The EPUB 2 spec says cover content="" MUST be an item id. Real EPUBs often have a filename there. If you only implement the letter of the spec, you'll silently miss a majority of real-world files. Always ground spec implementations in representative test inputs — on which: the user's Hyperthief.epub found two ebooklib/real-world quirks on first encounter that the spec alone wouldn't have surfaced.
+
+---
+
+## 0033 · 2026-04-16 · Accept wrapped-in-folder EPUB ZIPs + re-root on the server
+
+**Context.** Continuation of the EPUB upload saga. After shipping the `.zip` sniff in DECISIONS #0030, the user tried the real workflow: dragged `stories/Hyperthief.epub/` (a directory) from Finder into the browser upload. Got the "doesn't look like an EPUB" error. But I had smoke-tested `.zip` acceptance and it worked — what gave?
+
+Investigated by replicating the exact zip shape Finder produces:
+
+```
+$ zip -r hyperthief.zip Hyperthief.epub/
+$ unzip -l hyperthief.zip
+   Hyperthief.epub/
+   Hyperthief.epub/mimetype              ← wrapped in a top-level folder
+   Hyperthief.epub/META-INF/container.xml
+   Hyperthief.epub/OEBPS/...
+```
+
+My Phase 2.2 smoke test used `zipfile.ZipFile.write(p, p.relative_to(src))` which puts contents *at the root*. Finder (and browser drag-drop) wraps everything in a folder named after the directory. The sniff's `zf.read("mimetype")` fails on the wrapped layout with KeyError — we rejected the upload.
+
+**Options considered.**
+- **Tell the user to re-zip with contents at the root.** What the original error message did. Correct-but-cold UX: most users don't know what "contents at the root" means, and even those who do will hit this on every upload of an unzipped-EPUB folder.
+- **Accept either layout and unwrap on the server.** Sniff both `mimetype` at root (Layout A) and `<single-top-folder>/mimetype` (Layout B). When B is detected, re-root the ZIP in place before handing to the EPUB ingestor. The user never sees a difference.
+- **Extend the ingestor to handle wrapped zips directly.** Pushes the workaround down the stack; every consumer of the ingestor (CLI, UI, MCP) pays the complexity. Server-side re-rooting is a cleaner boundary.
+
+**Decision.** Sniff both layouts; re-root Layout B in place to produce a spec-compliant OCF (`mimetype` STORED first, everything else DEFLATED) before the ingestor sees it. Zero changes to the ingest / parse / render path.
+
+**Consequences.**
+- `_looks_like_epub_zip` now returns `(bool, str)` — the `str` is the prefix to strip (empty for Layout A).
+- `_rewrite_wrapped_epub_zip` is a ~20-line stdlib-zipfile routine. Atomic (tmp + replace).
+- Resource-fork entries (`__MACOSX/...`) that Finder's Compress sometimes adds are filtered during the single-root detection, so they don't trip the "multiple top-level folders → ambiguous" fallback.
+- Error message for genuine non-EPUB zips updated to tell both the "root-level mimetype" and "wrapped-in-folder" accepted shapes explicitly, so a user whose zip is neither gets a pointer to what we look for.
+
+**Retrospective lesson.** *Test with what the user has, not what you can construct.* My earlier smoke test zipped the folder's **contents**; the user's workflow zips the folder itself. Close, but the difference is load-bearing. When testing a user-facing path, the test fixture needs to come from the same source (drag-drop, Finder, a specific OS tool) the user actually uses — not a convenient programmatic stand-in. The bug was visible from iteration 0 if I had dragged the folder into my own browser instead of curling a Python-built zip.

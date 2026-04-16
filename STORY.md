@@ -516,3 +516,34 @@ But the user's report had **two complaints, not one**. Even if I fixed the exten
 - *Spec + real-world implementations, not just spec.* EPUB 2 says `<meta name="cover" content="...">` MUST be an item id. Reality: Sigil (the most common EPUB editor) writes filenames. Spec conformance is a lower bound, not a ceiling — real extractors need to tolerate real files. The Hyperthief test caught this on first try; without a real test file, the code would've passed review and failed in production.
 - *Threading is a discipline.* `RawStory.author` was being captured and dropped because each handoff (ingest → parse → package) was a separate PR that only understood its own boundary. The fix wasn't clever code; it was walking every handoff point and confirming the field flows. Worth a TODO: "when you add a field to RawStory, grep for every place that constructs ScriptModel and every package() call to confirm threading."
 - *Transparency in UI for auto-detection.* When a system guesses something about the user's content, say what it guessed and give a one-click override. Don't hide auto-detection behind "we'll figure it out." "Using the cover from your file" + a visible preview beats any amount of silent-magic correctness.
+
+---
+
+## 2026-04-16 · Finder-zip wrap — same bug, third variant
+
+**What happened.** After Phase 2.2 shipped, the user tried re-uploading `stories/Hyperthief.epub` (their directory-form EPUB) via the browser and got the "doesn't look like an EPUB" error — despite my having smoke-tested `.zip` acceptance in the Phase 2.2 session. I thought I'd already fixed this.
+
+**Root cause.** My Phase 2.2 smoke test built the zip in Python with `zipfile.ZipFile.write(p, p.relative_to(src))` — that puts contents at the ZIP root. When macOS Finder's Compress (or browser drag-drop of a directory) produces a zip, it preserves the top-level folder:
+
+```
+zip -r hyperthief.zip Hyperthief.epub/
+# result: Hyperthief.epub/mimetype, Hyperthief.epub/META-INF/..., etc.
+```
+
+Our sniff looked for `mimetype` at the ZIP root, got a KeyError, and rejected. The bug had been there the whole time; my test fixture didn't exercise it because I used a different zipping tool than the real user workflow.
+
+**Fix.** Accept both layouts. `_looks_like_epub_zip` now returns `(is_epub, prefix)`. Layout A (root-level `mimetype`) returns `(True, "")`; Layout B (single top-level folder wrapping everything, with `<folder>/mimetype` having the right contents) returns `(True, "<folder>/")`. When the prefix is non-empty, the upload handler calls `_rewrite_wrapped_epub_zip` to strip the wrapper and write a spec-compliant OCF in place before the ingestor ever sees the file. Four smoke tests: Layout A, Layout B, non-EPUB, wrapped-with-wrong-mimetype. All pass.
+
+**What this teaches.** *The test fixture has to match the user workflow, not just be "close enough."* `zipfile.write(path, relpath)` and `zip -r archive.zip folder/` produce different archive shapes. A smoke test that exercises one doesn't cover the other — even though both look like "a .zip file containing an EPUB." The test that would have caught this is literally "open the running server in a browser, drag the user's folder, see what happens." That test took 30 seconds to run once I thought to do it; the detour cost an entire extra round-trip.
+
+The three-variant sequence on this one feature:
+1. **Variant 1 (committed earlier)**: directory-as-EPUB on the CLI (`pipeline.run --in foo.epub/`) — handled via `EpubIngestor.ingest` auto-zipping from directory.
+2. **Variant 2 (committed earlier)**: `.zip` upload via browser with root-level mimetype — handled via `_save_upload` sniff + promote.
+3. **Variant 3 (this commit)**: `.zip` upload via browser with wrapper-folder mimetype — the actual thing users do. Handled via sniff-and-unwrap.
+
+Three variants of one conceptually simple feature. The lesson isn't "the feature is harder than it looks" — it's "the feature has three real user pathways, and testing one path silently deferred the bugs in the others." Exhaustive path enumeration on UX-adjacent features beats incremental fix-as-reported.
+
+**Concept bucket (added).**
+- *Match your test inputs to the real user's tools.* A user's zip wasn't made by Python. It was made by Finder or Safari's drag-drop zipping. Different tools produce different archive shapes. A sniff tested against Python-built zips passes; against Finder-built zips fails. If the user workflow involves a specific tool, put that tool in the test loop.
+- *Unwrap on the server beats ask-user-to-re-zip.* Telling the user "re-zip without the wrapper" is a cold UX. Unwrapping on the server is ~20 lines of stdlib zipfile — one-time cost, zero user-facing explanation. Prefer the transparent fix when it's cheap.
+- *Three variants of one feature is a design smell that rewards you once you notice.* The bug has always been "users want to give me an EPUB, in any of the shapes they have it." The implementation keeps addressing individual shapes. A feature-complete version accepts all four user shapes: (1) `.epub` file, (2) `.epub` folder on disk, (3) `.zip` with root mimetype, (4) `.zip` with wrapped mimetype. This commit closes the fourth.

@@ -4,6 +4,15 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Fixed — accept wrapped-in-folder EPUB uploads (macOS Finder / browser drag-drop)
+
+- `ui/app.py::_looks_like_epub_zip` now returns `(is_epub, prefix)` and detects two layouts: (A) spec-compliant root-level `mimetype` entry; (B) all entries wrapped in a single top-level folder, with `<folder>/mimetype` matching `application/epub+zip`. Layout B is what macOS Finder's Compress and browser drag-drop-of-a-directory produce.
+- `ui/app.py::_rewrite_wrapped_epub_zip` strips the wrapper prefix from every entry and writes a fresh spec-compliant ZIP (`mimetype` STORED first, everything else DEFLATED, atomic replace).
+- `_save_upload` re-roots wrapped uploads transparently, so `EpubIngestor` sees a normal `.epub` and needs no changes.
+- Error message sharpened: "This .zip isn't an EPUB. We check for a `mimetype` file with contents `application/epub+zip`, either at the root of the zip OR inside a single top-level folder."
+- Root cause of the earlier "drag my Hyperthief.epub folder and got rejected" report: the browser's drag-drop zip preserves the top-level folder; our sniff only looked at the ZIP root. Python's `zipfile.ZipFile.write(p, p.relative_to(src))` (what I used in the Phase 2.2 smoke test) was the unrepresentative case.
+- `__MACOSX/` prefixed entries (macOS resource forks that Finder's Compress occasionally creates) are ignored during the single-root-folder detection so they don't trip the "multiple top-levels" check.
+
 ### Added — author + language + auto-cover extraction (Phase 2.2 metadata)
 
 - `pipeline/ingest/base.py::extract_author_from_text` — scans the opening ~800 chars / 25 lines of a source for a byline (matches "by X", "written by X", "a novel by X", "author: X", optional italic markers, case-insensitive). Refuses matches longer than 100 chars or ending in connectors ("and", "or", "the") to avoid mid-prose false positives. Motivated by the user's observation that PDF / DOCX metadata-author fields are frequently wrong — stamped by zippers, converters, and default OS accounts instead of the real author.

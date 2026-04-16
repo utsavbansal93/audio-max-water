@@ -131,24 +131,98 @@ ALLOWED_EXTENSIONS = {".txt", ".md", ".docx", ".epub", ".pdf", ".zip"}
 USER_FACING_EXTENSIONS = {".txt", ".md", ".docx", ".epub", ".pdf"}
 
 
-def _looks_like_epub_zip(path: Path) -> bool:
-    """Return True iff `path` is a valid ZIP whose first entry is a
-    `mimetype` member with contents `application/epub+zip`.
+def _looks_like_epub_zip(path: Path) -> tuple[bool, str]:
+    """Return `(is_epub, prefix)` for a ZIP container.
 
-    Matches the EPUB 3.3 OCF spec: the container MUST be a ZIP and MUST
-    start with an uncompressed `mimetype` entry. We're forgiving about
-    position (some tools put it second), but strict about the contents.
+    Two valid layouts:
+
+      - **Layout A (spec-compliant)**: a `mimetype` member at the ZIP
+        root whose contents are `application/epub+zip`. Returns
+        `(True, "")`.
+
+      - **Layout B (wrapped)**: all entries share a single top-level
+        folder, one of whose entries is `<folder>/mimetype` with the
+        right contents. Produced by macOS Finder's "Compress" and by
+        browser drag-drop of a directory. Returns `(True, "<folder>/")`.
+
+    Anything else (no mimetype, wrong contents, multiple top-level
+    folders with no root mimetype, not a ZIP): returns `(False, "")`.
     """
     import zipfile
+
     try:
         with zipfile.ZipFile(path) as zf:
+            # Layout A: root-level mimetype.
             try:
                 data = zf.read("mimetype")
+                if data.strip() == EPUB_MIMETYPE.encode("ascii"):
+                    return True, ""
             except KeyError:
-                return False
-            return data.strip() == EPUB_MIMETYPE.encode("ascii")
+                pass  # not Layout A; try Layout B
+
+            # Layout B: single top-level folder containing mimetype.
+            # Collect distinct first segments of every member name.
+            names = [n for n in zf.namelist() if n and not n.startswith("__MACOSX/")]
+            roots: set[str] = set()
+            for n in names:
+                head, _sep, _rest = n.partition("/")
+                # Ignore pure-root entries (no slash) here; if any exist
+                # alongside a mimetype inside a folder, it's ambiguous.
+                if _sep:
+                    roots.add(head)
+                else:
+                    roots.add(head)  # leaf at root — still counts as a root
+            # Pure wrapped layout: every path begins with the same
+            # top-level folder and mimetype lives under it.
+            if len(roots) == 1:
+                prefix = next(iter(roots)) + "/"
+                try:
+                    data = zf.read(prefix + "mimetype")
+                    if data.strip() == EPUB_MIMETYPE.encode("ascii"):
+                        return True, prefix
+                except KeyError:
+                    pass
+            return False, ""
     except (zipfile.BadZipFile, OSError):
-        return False
+        return False, ""
+
+
+def _rewrite_wrapped_epub_zip(src: Path, prefix: str) -> None:
+    """Re-root a wrapped EPUB zip in place.
+
+    Reads every entry, strips `prefix` from the name, writes a fresh
+    ZIP with `mimetype` as the first STORED (uncompressed) entry and
+    everything else DEFLATED — spec-compliant OCF layout.
+
+    Atomically replaces `src` on success.
+    """
+    import shutil
+    import zipfile
+
+    assert prefix.endswith("/")
+    tmp = src.with_suffix(src.suffix + ".tmp")
+    with zipfile.ZipFile(src, "r") as src_zip, \
+         zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as dst_zip:
+        # 1. mimetype first, STORED, no extras.
+        mimetype_bytes = src_zip.read(prefix + "mimetype")
+        dst_zip.writestr(
+            zipfile.ZipInfo("mimetype"),
+            mimetype_bytes,
+            compress_type=zipfile.ZIP_STORED,
+        )
+        # 2. Everything else, re-rooted.
+        for info in src_zip.infolist():
+            name = info.filename
+            # Skip the wrapper entry itself and the mimetype we wrote above.
+            if name == prefix or name == prefix + "mimetype":
+                continue
+            if not name.startswith(prefix):
+                continue  # defensive — sniff already confirmed single wrapper
+            rel = name[len(prefix):]
+            if not rel or rel.endswith("/"):
+                continue  # directory entries; ZIP_DEFLATED doesn't need them
+            dst_zip.writestr(rel, src_zip.read(name))
+    tmp.replace(src)
 
 
 def _save_upload(file: UploadFile) -> Path:
@@ -173,9 +247,17 @@ def _save_upload(file: UploadFile) -> Path:
     with dst.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # .zip needs sniffing: accept if EPUB, reject otherwise.
+    # .zip needs sniffing: accept if EPUB (root-level or wrapped-in-folder),
+    # reject otherwise.
     if ext == ".zip":
-        if _looks_like_epub_zip(dst):
+        is_epub, prefix = _looks_like_epub_zip(dst)
+        if is_epub:
+            if prefix:
+                # Finder/browser-zipped-a-directory shape: re-root to
+                # spec-compliant layout in place.
+                _rewrite_wrapped_epub_zip(dst, prefix)
+                log.info("upload: re-rooted wrapped EPUB (prefix=%r) in %s",
+                         prefix, dst.name)
             epub_dst = dst.with_suffix(".epub")
             dst.rename(epub_dst)
             log.info("upload: promoted %s → %s (sniffed as EPUB)",
@@ -185,11 +267,11 @@ def _save_upload(file: UploadFile) -> Path:
         raise HTTPException(
             status_code=400,
             detail=(
-                "That .zip doesn't look like an EPUB — expected a "
-                f"'mimetype' entry with contents '{EPUB_MIMETYPE}'. "
-                "If this is an unzipped EPUB folder, re-zip it with "
-                "the mimetype file first and an uncompressed mimetype entry, "
-                "or drag the original .epub file instead."
+                "This .zip isn't an EPUB. We check for a 'mimetype' file "
+                f"with contents '{EPUB_MIMETYPE}', either at the root of "
+                "the zip OR inside a single top-level folder. Drop the "
+                "original .epub file, the folder containing the EPUB, or "
+                "a .zip of either."
             ),
         )
     return dst
