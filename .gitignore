@@ -32,3 +32,4 @@ voice_samples/**
 # !build*/script.json override implied by the allow-list above.
 /script.json
 
+.claude/
