@@ -15,6 +15,7 @@ from typing import Iterable
 
 import yaml
 
+from pipeline.config import load_config
 from pipeline.schema import CastModel, ChapterModel, LineModel, ScriptModel
 from pipeline.validate import check_voice_consistency
 from tts import Emotion, get_backend
@@ -24,7 +25,7 @@ from tts.backend import TTSBackend
 import shutil
 
 REPO = Path(__file__).resolve().parents[1]
-CFG = yaml.safe_load((REPO / "config.yaml").read_text())
+CFG = load_config()
 FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
 
 
@@ -155,6 +156,17 @@ def render_chapter(
     prev_was_inline_tag = False
     lines_list = chapter.lines
     for idx, line in enumerate(lines_list, start=1):
+        # Scene break: inject silence and skip synthesis.
+        if line.text.strip() == "---":
+            sil_ms = CFG["output"].get("scene_pause_ms", 1200)
+            sil_path = lines_dir / f"{idx:04d}_scene_break_{sil_ms}ms.wav"
+            if not sil_path.exists():
+                _make_silence(sil_ms, sr, sil_path)
+            wav_paths.append(sil_path)
+            prev = None
+            prev_was_inline_tag = False
+            continue
+
         voice_id = cast.mapping[line.speaker]
         h = _line_hash(line, voice_id)
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in line.speaker)
@@ -204,9 +216,13 @@ def render_all(
     backend_name: str | None = None,
     build_dir: Path | None = None,
 ) -> list[Path]:
+    global CFG
     script = ScriptModel.model_validate(json.loads(script_path.read_text()))
     cast = CastModel.model_validate(json.loads(cast_path.read_text()))
     build_dir = build_dir or (REPO / "build")
+
+    # Load per-story config overrides (e.g. build_salt_and_rust/config.yaml).
+    CFG = load_config(build_dir)
 
     # Backend resolution order: explicit arg > config.yaml > cast.json.
     # cast.backend is informational (which engine originally produced the

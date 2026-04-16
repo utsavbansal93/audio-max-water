@@ -4,6 +4,15 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Fixed
+- `pipeline/package.py` — two metadata bugs: (1) `--script` defaulted to `build/script.json` regardless of `--build`, causing chapter titles to bleed from whichever story last used the default build dir; default is now `<build>/script.json` so `--build` is the single required arg. (2) `ffmetadata` never wrote `artist=`, producing "Unknown author" in all players; `--author` flag added and wired into the metadata block.
+
+### Added
+- `stories/salt-and-rust.md` + `build_salt_and_rust/script.json` + `cast_salt_and_rust.json` — *Salt and Rust*, original post-apocalyptic short story. Three-character cast: narrator (`bm_george`), Furiosa (`af_nicole`), Mariner (`am_echo`). Production notes supplied with full voice direction, pacing, and emotion annotations per line.
+- `build_salt_and_rust/config.yaml` — first use of per-story config override pattern. Sets `scene_pause_ms: 2000` per production direction; global `config.yaml` unchanged.
+- `pipeline/config.py` — new `load_config(build_dir)` utility. Deep-merges `<build_dir>/config.yaml` over global `config.yaml` when present. Enables per-story config without touching global defaults.
+- `pipeline/render.py` — two changes: (1) `render_all` now calls `load_config(build_dir)` and updates module-level `CFG`, so per-story overrides flow into pause/render logic; (2) `render_chapter` detects `"---"` lines and injects `scene_pause_ms` silence instead of synthesizing — wires up the previously-defined-but-unused `scene_pause_ms` config key.
+
 ### Changed
 - `README.md` rewritten as user-facing — audience is someone landing on the repo cold who wants to turn a story into an audiobook. New sections: one-paragraph what-is-this, Quickstart, Source formats, How it works, Casting, Swapping engines, **Modifying for your system** (Linux / NVIDIA CUDA / CPU-only / Windows — covers which parts are Mac-specific vs cross-platform), Troubleshooting, Project docs, License. AI-assistant instructions moved out — they live in `CLAUDE.md`; README now links.
 - Portability refactor: `pipeline/render.py`, `pipeline/package.py`, `pipeline/qa.py`, `pipeline/bench.py` replace hard-coded `/opt/homebrew/bin/ffmpeg` / `/opt/homebrew/bin/ffprobe` with `shutil.which(...)` so the code runs on any platform where the binaries are on `$PATH`. Falls back to the Homebrew paths only if `shutil.which` returns `None`.

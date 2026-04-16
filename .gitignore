@@ -21,4 +21,4 @@ voice_samples/**
 !voice_samples/.gitkeep
 !voice_samples/SOURCES.md
 cast.json
-script.json
+/script.json

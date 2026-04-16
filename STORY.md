@@ -223,3 +223,61 @@ The fix was three lines: load once in `MLXKokoroBackend.__init__`, pass the inst
 - *Know the inputs before tuning the outputs.* The cost of this mistake was one iteration of scaffolding around a dead-end component. The habit to build: for any component you're about to tune, write down its actual input surface from the docs — not from memory, not from what you wish it had. The knob you want may not exist, and you'll have saved a cycle.
 - *Revert discipline.* When a change doesn't meet its stated goal, the first move is to take it out. If some *part* of the change was useful for an unrelated reason, that's a separate, smaller PR with its own justification. Don't keep noise in the codebase because some fraction of it accidentally helped.
 - *Narrow the commitment when part of the system already works.* Hybrid is Option D because Option A (full swap) would unnecessarily replace a working component (Kokoro narrators). When something is genuinely working, don't touch it — upgrade only the broken part.
+
+---
+
+## 2026-04-16 · *Salt and Rust* — first original-fiction production
+
+**What this was.** The first story in this project that is not a canonical literary text — original fan-fiction crossover placing Furiosa (Mad Max: Fury Road) and the Mariner (Waterworld) in the same post-apocalyptic salt-flat scene. User wrote the story and supplied detailed production notes with voice direction at the character and line level.
+
+**What was different about this production vs. prior stories.**
+
+*Previous stories* (P&P, Gatsby) were canonical texts: LLM-parsed prose, emotion inferred from context, character voices calibrated against established performances in the reader's mental model.
+
+*This production* had the opposite information profile: the author was the same person as the director. Production notes arrived before a single line was rendered. Every character has a written voice brief; specific lines are flagged for specific delivery choices; what to avoid is stated as explicitly as what to do. This is the audiobook equivalent of working from a shooting script with the director in the room.
+
+**How explicit notes changed the emotion annotation strategy.**
+
+For Gatsby, emotion was inferred from the Fitzgerald text plus book context. For Salt and Rust, production notes pre-resolved most inference questions: Furiosa's questions have falling intonation because the notes say "falling intonation" directly. The Mariner's map speech is the only emotional moment because the notes say "the only moment of something like feeling in the entire piece." This compressed annotation time dramatically but also made errors more traceable — if a line sounds wrong, there is a written note to compare against.
+
+**Pipeline gap discovered: `scene_pause_ms` was defined but never consumed.**
+
+While planning the render, I found that `config.yaml` had a `scene_pause_ms: 1200` key but `render_chapter` in `pipeline/render.py` never read it. Scene breaks in script.json had no handling — the `---` line would have been passed to Kokoro as literal text and synthesized (or errored). Added `---` detection to `render_chapter` and wired the config key. Assistant chose this. See DECISIONS.md #0012.
+
+**Per-story config pattern introduced here.**
+
+Production notes called for 2–3s pauses at section breaks. Rather than mutate global `config.yaml`, introduced `pipeline/config.py::load_config(build_dir)` — auto-detects and deep-merges `<build_dir>/config.yaml` over global defaults. Each story carries its own exceptions. User approved this approach during planning.
+
+**Casting decisions.**
+
+- Narrator → `bm_george`: user production notes reference Holter Graham on McCarthy; British male, mature, authoritative tags. Assistant chose `bm_george` over `bm_fable` on the "authoritative vs. measured" distinction.
+- Furiosa → `af_nicole`: notes say "dry" repeatedly; `af_nicole` is the only Kokoro voice tagged "dry." No Australian accent in Kokoro; notes explicitly provided a fallback ("neutral hard-consonant delivery works equally well").
+- Mariner → `am_echo`: the direction is mostly negative — not mysterious, not gruff, not theatrical. `am_echo` (neutral/clear) is the most subtractive voice available.
+
+All three casting decisions are documented in DECISIONS.md #0013–0015.
+
+**What to listen for in the first render.**
+
+1. The gills paragraph: "He had gills. Three slits behind each ear, pale and closed now, fluttering when he breathed." — narrator must not slow down or lower voice. If it sounds like something is being highlighted, it's too much.
+2. "Then the something stood up." — the hinge. Should land as a flat observation, not a reveal.
+3. "I was a lot of things." — Mariner, after "You a medic." If it sounds like a tease or a hook, the performance is too big. It should sound like someone declining to elaborate because elaborating would take effort.
+4. The map speech: "I had a map once. Showed a place. Dry land all the way around, but green. I spent twenty years looking." — one allowed moment of feeling. No catch. Just saying the thing out loud.
+5. Final line: "The salt fell away behind them and did not follow." — slowest line. Then silence.
+
+---
+
+## 2026-04-16 · *Salt and Rust* — post-render retrospective
+
+**User verdict: 3.5/5 stars for narration.** Self-described strict score — stated ceiling is higher, not a ceiling on the material.
+
+**What worked.** The restraint-heavy literary register was a reasonable fit for Kokoro's non-autoregressive architecture. A story where *the flat affect is the point* plays to Kokoro's natural tendency rather than fighting it. `af_aoede` as narrator landed well (user noted "lovely"). `af_nicole` for Furiosa worked — the "whispery" quality aligned with the dry, economical direction.
+
+**What didn't.** Two limitations surfaced:
+
+1. *Mariner voice options weren't always great.* `am_michael` was the strongest available candidate but "authoritative / warm" tags pulled in a direction that doesn't quite match "from nowhere, plain not opaque." The audition set (am_michael, am_fenrir, am_onyx, am_echo) didn't contain a voice that naturally inhabits salt-air roughness without movie-tough affect. This is a Kokoro catalog gap, not a casting mistake — the direction called for something the preset library doesn't have cleanly.
+
+2. *Emotional range limited.* Kokoro's non-autoregressive architecture gives the emotion fields in script.json no real input surface. The map speech ("I had a map once...") — the only scripted moment of feeling — likely read flatter than the production notes intended. This is the same ceiling documented in DECISIONS.md #0011.
+
+**Structural observation worth keeping.** The fit between story tone and engine capability is a production decision that should be made earlier. This story worked *despite* Kokoro's emotional flatness because flatness was directionally correct. A story with a demanding emotional arc (grief, fear, joy) would expose the same limitation as a flaw rather than a feature. The right question before casting is: *does this story's emotional register require expressiveness, or does restraint serve it?* If the former, plan for Chatterbox from the start.
+
+**For the Mariner voice specifically.** If this story gets a re-render under a hybrid engine setup (DECISIONS.md #0011), the Mariner is the character most likely to benefit from a Chatterbox voice clone with a reference clip — the direction is specific enough ("salt-air rough, not movie-tough") that a cloned voice from a reference performance would outperform any preset catalog.
