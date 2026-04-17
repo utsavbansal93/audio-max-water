@@ -20,6 +20,21 @@
     {% endif %}
   {% endfor %}
 
+  <!-- Prior-project cast reuse -->
+  <details class="advanced" id="prior-cast-section">
+    <summary class="caption">Reuse cast from a prior project</summary>
+    <div class="card" style="margin-top: 8px;">
+      <p class="caption muted">Pre-fill voices from a previous book's cast. Unmatched characters keep their auto-proposed voices.</p>
+      <div class="field" style="display:flex; gap: 8px; align-items: center; margin-top: 8px;">
+        <select id="prior-build-select" class="field" style="flex:1">
+          <option value="">Loading…</option>
+        </select>
+        <button type="button" id="prior-cast-apply" class="btn-ghost btn-sm" disabled>Apply</button>
+      </div>
+      <p id="prior-cast-status" class="caption muted" style="margin-top: 4px;" hidden></p>
+    </div>
+  </details>
+
   <ol class="voice-list">
     {% if narrator.c %}
       {% set c = narrator.c %}
@@ -91,6 +106,24 @@
   </header>
   <p class="sheet-sample caption" id="sheet-sample"></p>
   <ol id="sheet-voices" class="sheet-voices" role="listbox"></ol>
+
+  <!-- Reference clip upload (Chatterbox voice cloning) -->
+  <details class="advanced" id="sheet-upload-section" style="margin-top: 16px; padding: 0 4px;">
+    <summary class="caption muted">Upload your own reference clip</summary>
+    <div style="margin-top: 8px;">
+      <p class="caption muted">
+        A 5–15 s clean WAV or MP3 of the character's voice. Used only as a timbre
+        reference — the speaker's words do not appear in the output.
+      </p>
+      <label class="cover-upload" style="margin-top: 8px;">
+        <input type="file" id="sheet-ref-input" accept=".wav,.mp3,.m4a,.flac,.ogg" />
+        <span id="sheet-ref-label" class="caption muted">Choose WAV / MP3…</span>
+      </label>
+      <button type="button" id="sheet-ref-upload" class="btn-primary btn-sm"
+              style="margin-top: 8px; width: 100%;" disabled>Register as voice</button>
+      <p id="sheet-ref-status" class="caption muted" style="margin-top: 4px;" hidden></p>
+    </div>
+  </details>
 </dialog>
 
 <script id="job-data" type="application/json">{{ job | tojson }}</script>
@@ -101,6 +134,11 @@
   AMW.initVoicePicker({
     jobId: "{{ job.job_id }}",
     backend: "{{ job.backend }}",
+    onSheetOpen(characterName) {
+      if (AMW._setRefCharacter) AMW._setRefCharacter(characterName);
+    },
   });
+  AMW.initPriorCast({ jobId: "{{ job.job_id }}" });
+  AMW.initVoiceRefUpload({ jobId: "{{ job.job_id }}" });
 </script>
 {% endblock %}

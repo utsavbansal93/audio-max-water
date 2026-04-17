@@ -23,22 +23,25 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 
+from pipeline._ffmpeg import FFPROBE
 from pipeline.schema import ScriptModel
 
-
-import shutil
-
 REPO = Path(__file__).resolve().parents[1]
-FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 
 # --- thresholds (deliberately loose — we want regressions, not perfectionism) -
 
 # Words per second: natural English narration is 2.3–3.0; Kokoro at slow pace ~2.0.
+# Short lines (< MIN_WORDS_FOR_WPS_CHECK words or < MIN_DUR_FOR_WPS_CHECK_MS ms)
+# are exempt — a 2-word fragment can't hit 1.3 w/s with natural TTS pacing.
 WPS_LOW  = 1.3
 WPS_HIGH = 5.0
-# Peak dB: anything > -1 dB is almost-clipping.
-PEAK_DB_MAX = -1.0
+MIN_WORDS_FOR_WPS_CHECK = 5
+MIN_DUR_FOR_WPS_CHECK_MS = 1500
+
+# Peak dB: loudnorm targets TP=-1.5; raising threshold from -1.0 to -0.3 so
+# normally-loud lines stop false-flagging.  True clipping is > 0 dBFS.
+PEAK_DB_MAX = -0.3
 # RMS dB: quiet audiobook target roughly -18..-23 dBFS.
 RMS_DB_LOW  = -32.0
 RMS_DB_HIGH = -10.0
@@ -118,8 +121,11 @@ def scan_chapter(script_path: Path, chapter_number: int, build_dir: Path) -> lis
             issues.append(f"RMS {rms_db:.1f} dB — effectively silent")
         elif not (RMS_DB_LOW <= rms_db <= RMS_DB_HIGH):
             issues.append(f"RMS {rms_db:.1f} dB outside typical audiobook range [{RMS_DB_LOW}, {RMS_DB_HIGH}]")
-        if words > 2 and not (WPS_LOW <= wps <= WPS_HIGH):
-            issues.append(f"pacing {wps:.2f} words/sec outside [{WPS_LOW}, {WPS_HIGH}]")
+        if words >= MIN_WORDS_FOR_WPS_CHECK and dur_ms >= MIN_DUR_FOR_WPS_CHECK_MS:
+            if not (WPS_LOW <= wps <= WPS_HIGH):
+                issues.append(f"pacing {wps:.2f} words/sec outside [{WPS_LOW}, {WPS_HIGH}]")
+        elif words < MIN_WORDS_FOR_WPS_CHECK or dur_ms < MIN_DUR_FOR_WPS_CHECK_MS:
+            pass  # short line exempt — pacing check not meaningful at this length
 
         by_voice.setdefault(line.speaker, []).append(rms_db)
         results.append(LineQA(idx, line.speaker, line.text, wav, dur_ms, words, wps, peak_db, rms_db, issues))

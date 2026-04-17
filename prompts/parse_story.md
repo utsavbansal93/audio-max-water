@@ -43,7 +43,17 @@ You receive a prose story and produce STRICT JSON matching this schema:
 
 1. **Faithful wording.** `text` is a byte-verbatim extract from the source. Do not paraphrase, summarize, add, or re-order words. A downstream validator concatenates all `text` values and diffs against the source — any divergence aborts the pipeline.
 
-2. **Speaker attribution.** Everything outside of quoted dialogue is `speaker: "narrator"`. Dialogue tags ("he said", "Elizabeth replied") stay with the narrator line they're attached to, UNLESS the whole line is the dialogue. Default: attach the tag to the dialogue line itself as narrator context — prefer splitting lines cleanly so voice handoffs sound natural.
+2. **Speaker attribution.** Everything outside of quoted dialogue is `speaker: "narrator"`. **Dialogue attribution tags MUST be split onto their own narrator line — both `<Name> said` patterns (`Rig said,` / `FM asked.`) AND pronoun patterns (`he said` / `she replied` / `they muttered`).**
+
+   *Sandwiched pattern — produces THREE lines:*
+   Source: `"It is algae bread," Rig said, "but with frosting!"`
+   Lines: `{speaker: Rig, text: "\"It is algae bread,\""}`, `{speaker: narrator, text: "Rig said,"}`, `{speaker: Rig, text: "\"but with frosting!\""}`
+
+   *Trailing pattern — produces TWO lines:*
+   Source: `"That's fine," she said.`
+   Lines: `{speaker: FM, text: "\"That's fine,\""}`, `{speaker: narrator, text: "she said."}`
+
+   **Never attach a `<Name> said` or `he/she said` attribution to a character's speaker line** — the attribution would be spoken in that character's voice, which is wrong. A downstream normalizer in `pipeline/normalize.py::split_lumped_dialogue_tags` catches residual lumping, but correct parse is faster and cheaper.
 
    **Every speaker string used in `lines` MUST have a matching entry in the top-level `characters` array** — including `narrator`. If any line has `speaker: "narrator"`, you MUST also include a `{"name": "narrator", ...}` entry in `characters` (e.g. `gender: "neutral"`, `accent` matching the source's general voice, `personality: "third-person omniscient storyteller"` or similar). Speakers and characters are in one-to-one correspondence; downstream voice casting will fail if any speaker is missing from `characters`.
 

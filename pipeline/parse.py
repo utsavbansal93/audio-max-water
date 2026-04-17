@@ -117,6 +117,24 @@ def parse_raw_story(
             + "\n".join(errors)
         )
 
+    # Post-parse normalization: split any lumped dialogue-attribution tags
+    # (e.g. `"Hey!" he said. "Um, happy birthday?"` on Rig's line) into
+    # separate narrator lines so "he said" renders in the narrator's voice,
+    # not the character's. Preserves faithful-wording by construction, but
+    # we re-validate defensively in case an edge case slips through.
+    from pipeline.normalize import canonicalize_speakers, split_lumped_dialogue_tags
+    script, n_canon = canonicalize_speakers(script)
+    if n_canon:
+        log.info("parse: canonicalized %d speaker key(s) to first-seen casing", n_canon)
+    script, n_splits = split_lumped_dialogue_tags(script)
+    if n_splits:
+        log.info("parse: split %d lumped dialogue tags post-parse", n_splits)
+        post_errors = _validate_against_source(script, source_md)
+        if post_errors:
+            raise ParseError(
+                "Dialogue-tag split broke faithful wording:\n" + "\n".join(post_errors)
+            )
+
     log.info("parse: OK — %d chapters, %d lines  author=%r  lang=%r",
              len(script.chapters),
              sum(len(c.lines) for c in script.chapters),

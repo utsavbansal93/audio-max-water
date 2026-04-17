@@ -59,3 +59,58 @@ def require_free(min_gb: float = 4.0, backend: str | None = None) -> None:
         f"(`pgrep -f python3.12`), or render a smaller scope. "
         f"See CLAUDE.md 'Memory discipline'."
     )
+
+
+# ----- Render-lock (B6) -------------------------------------------------------
+#
+# Prevents two concurrent renders on the same build dir, and (when any backend
+# resolves to chatterbox) prevents any concurrent Chatterbox render on the
+# machine. Uses fcntl.flock: kernel releases the lock on process exit even on
+# SIGKILL, so no stale-lock-recovery needed. PID text inside the lock file is
+# best-effort identification for the error message.
+
+import fcntl
+import os
+from pathlib import Path as _Path
+
+_held_locks: list = []  # module-global; fds kept alive for the process lifetime
+
+
+def acquire_render_lock(build_dir, chatterbox: bool = False) -> None:
+    """Acquire exclusive render locks or raise ConfigurationError.
+
+    - Always acquires `<build_dir>/.render.lock`: one render per build dir.
+    - If chatterbox=True, additionally acquires `<build_dir.parent>/.chatterbox.lock`:
+      one Chatterbox render per machine (MPS is single-queue; parallel
+      Chatterbox processes regress throughput by ~38% per Hyperthief data).
+
+    On collision raises ConfigurationError naming the holder PID from the
+    lock file's body text (may be stale if holder SIGKILLed and its PID was
+    recycled; kernel still knows the correct holder via the fd).
+    """
+    from pipeline._errors import ConfigurationError
+
+    build_dir = _Path(build_dir)
+    paths = [build_dir / ".render.lock"]
+    if chatterbox:
+        paths.append(build_dir.resolve().parent / ".chatterbox.lock")
+
+    for p in paths:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(p, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            try:
+                holder = p.read_text().strip() or "unknown"
+            except Exception:
+                holder = "unknown"
+            raise ConfigurationError(
+                f"Another render is already running. Lock: {p} (holder PID: {holder}).",
+                fix=f"Wait for it to finish, or `kill {holder}` if stale. "
+                    f"Multiple concurrent Chatterbox renders serialize on MPS and regress throughput — "
+                    f"see STORY.md parallelization retrospective.",
+            )
+        os.ftruncate(fd, 0)
+        os.write(fd, str(os.getpid()).encode())
+        _held_locks.append(fd)

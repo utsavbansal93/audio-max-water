@@ -181,6 +181,35 @@ def propose(
     return cast, proposals
 
 
+def merge_from_prior(
+    cast: CastModel,
+    prior_cast_path: Path,
+    *,
+    verbose: bool = True,
+) -> CastModel:
+    """Pre-fill matching entries from a prior project's cast.json.
+
+    For each character that appears in both casts (case-insensitive name
+    match), replace the auto-proposed entry with the prior project's
+    (voice, backend) assignment.  Unmatched characters keep their
+    auto-proposed rank-1 entry so the cast remains complete.
+
+    Returns a new CastModel (does not mutate the original).
+    """
+    prior = load_cast(prior_cast_path)
+    prior_lower: dict[str, str | object] = {k.lower(): v for k, v in prior.mapping.items()}
+
+    new_mapping = dict(cast.mapping)
+    for char in list(new_mapping.keys()):
+        prior_entry = prior_lower.get(char.lower())
+        if prior_entry is not None:
+            new_mapping[char] = prior_entry
+            if verbose:
+                print(f"  [cast-from] {char} <- {prior_entry} (inherited)")
+
+    return cast.model_copy(update={"mapping": new_mapping})
+
+
 def write_cast(cast: CastModel, path: Path) -> None:
     path.write_text(json.dumps(cast.model_dump(), indent=2) + "\n")
 
@@ -207,6 +236,14 @@ def main() -> None:
     ap.add_argument("--cast",   default="cast.json",         type=Path)
     ap.add_argument("--samples-dir", default="samples/cast", type=Path)
     ap.add_argument("--backend", default=CFG["backend"])
+    ap.add_argument(
+        "--cast-from",
+        default=None,
+        type=Path,
+        metavar="PRIOR_CAST",
+        help="Path to a prior project's cast.json (or its build dir). "
+             "Matching character names are pre-filled from that cast as rank-1 picks.",
+    )
     sub = ap.add_mutually_exclusive_group(required=True)
     sub.add_argument("--propose", action="store_true")
     sub.add_argument("--approve", action="store_true")
@@ -215,6 +252,15 @@ def main() -> None:
 
     if args.propose:
         cast, proposals = propose(args.script, args.samples_dir, args.backend)
+        # --cast-from: overlay matching entries from a prior project's cast.
+        if args.cast_from:
+            prior_path = args.cast_from
+            if prior_path.is_dir():
+                prior_path = prior_path / "cast.json"
+            if not prior_path.exists():
+                raise SystemExit(f"--cast-from: cast.json not found at {prior_path}")
+            print(f"\nMerging from prior cast: {prior_path}")
+            cast = merge_from_prior(cast, prior_path)
         write_cast(cast, args.cast)
         print_proposals(proposals, cast, args.samples_dir)
         print("\nCast written to", args.cast, "(pending approval)")

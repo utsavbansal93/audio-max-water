@@ -15,16 +15,13 @@ from pathlib import Path
 
 import soundfile as sf
 
+from pipeline._ffmpeg import FFPROBE
 from pipeline.qa import scan_chapter, whisper_roundtrip
 from pipeline.render import render_all
 from pipeline.schema import ScriptModel
 
-
-import shutil
-
 REPO = Path(__file__).resolve().parents[1]
 BENCH = REPO / "BENCHMARKS.md"
-FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 
 def _git_sha_short() -> str:

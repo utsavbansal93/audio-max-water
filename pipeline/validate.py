@@ -95,6 +95,47 @@ def check_voice_consistency(script: ScriptModel, cast: CastModel, valid_voice_id
     return errors
 
 
+def check_main_character_voice_uniqueness(
+    script: ScriptModel, cast: CastModel, main_threshold: int = 10,
+) -> list[str]:
+    """Enforce the CLAUDE.md cast-diligence rule: no two main characters share
+    a resolved (backend, voice_id). Narrator is excluded (it's structurally
+    one voice by design). A "main character" is a speaker with ≥ main_threshold
+    dialogue lines in the script.
+
+    Returns a list of error strings (one per collision bucket). Empty = OK.
+    """
+    from collections import Counter
+    counts: Counter = Counter()
+    for ch in script.chapters:
+        for line in ch.lines:
+            if line.speaker != "narrator":
+                counts[line.speaker] += 1
+
+    # Group main characters by their (backend, voice) bucket
+    buckets: dict[tuple[str, str], list[tuple[str, int]]] = {}
+    for speaker, n in counts.items():
+        if n < main_threshold:
+            continue
+        if speaker not in cast.mapping:
+            continue  # already flagged by check_voice_consistency
+        entry = cast.resolve(speaker)
+        key = (entry.backend, entry.voice)
+        buckets.setdefault(key, []).append((speaker, n))
+
+    errors: list[str] = []
+    for (backend, voice), members in buckets.items():
+        if len(members) < 2:
+            continue
+        names = ", ".join(f"{sp} ({n} lines)" for sp, n in sorted(members, key=lambda x: -x[1]))
+        errors.append(
+            f"Main characters share voice {backend}:{voice!r} — {names}. "
+            "Assign each a distinct voice (different Kokoro preset OR add a "
+            "Chatterbox reference clip in voice_samples/ and route via cast.json)."
+        )
+    return errors
+
+
 def load_script(path: Path) -> ScriptModel:
     return ScriptModel.model_validate(json.loads(path.read_text()))
 

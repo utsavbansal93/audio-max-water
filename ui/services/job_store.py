@@ -148,6 +148,7 @@ class PersistedJob:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "input_filename": self.input_filename,
+            "build_dir": self.build_dir,
             "title": self.title,
             "n_chapters": self.n_chapters,
             "n_lines": self.n_lines,

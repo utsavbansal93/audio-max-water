@@ -18,7 +18,6 @@ dependencies = [
 
 [project.optional-dependencies]
 chatterbox = ["chatterbox-tts"]
-xtts = ["TTS"]
 
 # Multi-format ingest (Phase 1 orchestrator). Each ingestor imports its
 # parser lazily so an install without this group still runs text/.md inputs.

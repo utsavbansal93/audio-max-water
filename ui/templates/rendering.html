@@ -5,15 +5,30 @@
   <header class="page-header--tight">
     <h1 class="stage-title" id="stage-title">Recording</h1>
     <p id="progress-message" class="caption muted">&nbsp;</p>
-    <p id="progress-meta" class="caption muted">&nbsp;</p>
   </header>
 
   {% with stages = job.stages %}
     {% include "_stage_tracker.html" %}
   {% endwith %}
 
+  <!-- Two-row progress: overall fill + cache/fresh segment coloring -->
   <div class="progress-bar" role="progressbar" aria-label="Render progress">
     <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+    <div id="progress-cache" class="progress-fill progress-fill--cache" style="width: 0%"></div>
+  </div>
+
+  <!-- Per-line live preview: speaker tag + truncated text -->
+  <div id="current-line" class="current-line-preview" aria-live="polite" hidden>
+    <span id="line-speaker" class="speaker-tag caption"></span>
+    <span id="line-text" class="caption muted"></span>
+  </div>
+
+  <!-- Elapsed + ETA stats row -->
+  <div class="render-stats caption muted" id="render-stats">
+    <span id="elapsed-display">0:00</span> elapsed
+    <span class="sep" id="eta-sep" hidden>·</span>
+    <span id="eta-display" hidden></span>
+    <span id="eta-suffix" hidden> remaining</span>
   </div>
 
   <details class="advanced">
@@ -34,10 +49,88 @@
     if (state.status !== "done" && state.status !== "rendering") {
       await fetch("/api/render/{{ job.job_id }}", { method: "POST" });
     }
+
+    // --- Elapsed timer (pure client-side, 1s tick) ---
+    const startTs = Date.now();
+    const elapsedEl = document.getElementById("elapsed-display");
+    const etaEl = document.getElementById("eta-display");
+    const etaSepEl = document.getElementById("eta-sep");
+    const etaSufEl = document.getElementById("eta-suffix");
+    const lineEl = document.getElementById("current-line");
+    const lineSpeakerEl = document.getElementById("line-speaker");
+    const lineTextEl = document.getElementById("line-text");
+    const cacheBarEl = document.getElementById("progress-cache");
+
+    function formatTime(s) {
+      const m = Math.floor(s / 60);
+      return `${m}:${String(s % 60).padStart(2, "0")}`;
+    }
+
+    // EMA state for ETA (over non-cache-hit lines only).
+    const lineTimes = [];   // sliding window of last 30 took_s values
+    let etaS = null;        // current ETA estimate in seconds
+    let etaRefreshIn = 0;   // count-down: recompute every 5 fresh lines
+    let totalLines = 0;
+    let doneLines = 0;
+    let cacheHits = 0;
+
+    const tickInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTs) / 1000);
+      elapsedEl.textContent = formatTime(elapsed);
+
+      if (etaS !== null) {
+        const remaining = Math.max(0, etaS - elapsed);
+        etaEl.textContent = formatTime(remaining);
+        etaSepEl.hidden = false;
+        etaEl.hidden = false;
+        etaSufEl.hidden = false;
+      }
+    }, 1000);
+
     AMW.subscribeProgress("{{ job.job_id }}", {
       doneRedirect: "/done/{{ job.job_id }}",
       terminalStages: ["package"],
+      onLineEvent(data) {
+        if (!data.extra) return;
+        const { cache_hit, took_s, speaker, text_preview } = data.extra;
+        totalLines = data.total;
+        doneLines = data.current;
+        if (cache_hit) cacheHits++;
+
+        // Per-line flicker.
+        if (speaker || text_preview) {
+          lineEl.hidden = false;
+          lineSpeakerEl.textContent = speaker ? `[${speaker}]` : "";
+          lineTextEl.textContent = text_preview || "";
+          lineEl.classList.remove("line-flash");
+          void lineEl.offsetWidth;  // reflow to restart animation
+          lineEl.classList.add("line-flash");
+        }
+
+        // Cache-hit segment coloring: a lighter overlay on the left portion.
+        if (totalLines > 0) {
+          const cachePct = (cacheHits / totalLines) * 100;
+          cacheBarEl.style.width = Math.min(cachePct, (doneLines / totalLines) * 100) + "%";
+        }
+
+        // ETA via EMA: track non-cache-hit times.
+        if (!cache_hit && took_s > 0) {
+          lineTimes.push(took_s);
+          if (lineTimes.length > 30) lineTimes.shift();
+          etaRefreshIn--;
+          if (etaRefreshIn <= 0 && lineTimes.length >= 3) {
+            const avg = lineTimes.reduce((a, b) => a + b, 0) / lineTimes.length;
+            const remaining = totalLines - doneLines;
+            const remainingFresh = Math.max(0, remaining - (remaining * (cacheHits / Math.max(doneLines, 1))));
+            const elapsed = Math.floor((Date.now() - startTs) / 1000);
+            etaS = elapsed + Math.round(avg * remainingFresh);
+            etaRefreshIn = 5;
+          }
+        }
+      },
     });
+
+    window.addEventListener("unload", () => clearInterval(tickInterval));
   })();
 </script>
 {% endblock %}

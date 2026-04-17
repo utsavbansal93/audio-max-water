@@ -12,6 +12,33 @@ output:
   paragraph_pause_ms: 500      # silence between paragraphs
   scene_pause_ms: 1200         # silence at scene breaks (* * * or blank lines)
   line_pause_ms: 180           # silence between consecutive lines same paragraph
+  inline_tag_pause_ms: 30      # B8: silence between a dialogue fragment and its
+                               #     attribution tag. Tight by default because the
+                               #     tag should hug the surrounding dialogue;
+                               #     overridable per story in build/<stem>/config.yaml.
+                               #     Fallback if unset: int(line_pause_ms * 0.4) = 72ms.
+
+  # B4: loudness normalization. EBU R128 applied per-line so Chatterbox and
+  # Kokoro outputs sit at equal perceived loudness. Adds ~100-200 ms/line
+  # overhead (<1% of a typical Chatterbox render).
+  loudness_norm: true
+  loudness_target_lufs: -16
+
+  # Chatterbox short-text mitigation (see pipeline/_short_line_splitter.py,
+  # DECISIONS #0038). Chatterbox gibberishes on ≤10-char inputs; for such
+  # lines we pair-render with an adjacent same-speaker line and VAD-split,
+  # or tail-append a filler phrase and VAD-crop. Disable if your scripts
+  # never have ≤10-char Chatterbox lines.
+  short_line_mitigation: true
+  short_line_threshold: 10     # alphanumeric-char count; punctuation stripped first
+  short_line_max_takes: 3      # retry budget per pair/solo line
+  short_line_tail: "That was the plan."   # filler appended for unpaired short lines
+
+# Main-character voice-uniqueness hard-check (B2).
+# A speaker with ≥ main_character_threshold lines must have a voice distinct
+# from every other such speaker. Narrator exempt.
+validation:
+  main_character_threshold: 10
 
 # LLM provider for the parse step (raw text -> script.json).
 # Reads API keys exclusively from env vars: ANTHROPIC_API_KEY / GEMINI_API_KEY.

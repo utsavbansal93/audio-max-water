@@ -4,6 +4,79 @@ All notable changes to this project will be documented here. Format based on [Ke
 
 ## [Unreleased]
 
+### Added — "Easy wins" code review pass: hygiene, quality, speed, UI (2026-04-17)
+
+**Part 1 — Code hygiene**
+
+- **`pipeline/_ffmpeg.py`** — single canonical resolution point for `FFMPEG` / `FFPROBE` binaries (shutil.which + `/opt/homebrew/bin` fallback). Six call sites across `render.py`, `qa.py`, `bench.py`, `package.py`, `_short_line_splitter.py` (×2 inline-in-loop hits) all now import from here. Removes per-call PATH scans inside the VAD loop.
+- **`pipeline/_cache.py`** — canonical `line_hash(line, voice_key)` using tuple-string (no `json.dumps` overhead). Shared by both `render.py` and `_short_line_splitter.py`; prevents cache-seat collision if the format ever changes. Replaces the two previously duplicated `_line_hash()` definitions.
+- **`pipeline/_tags.py`** — added `@functools.lru_cache(maxsize=256)` to `make_name_tag_regexes`. Previously compiled two regexes per call; called once per character line during split detection. Now compiled once per unique speaker name (20 compilations for a 500-line script vs 500).
+- **`tts/__init__.py`** — removed the `xtts` branch; `get_backend("xtts")` now raises `ValueError: Unknown backend ... Known: kokoro, mlx-kokoro, chatterbox`. The old ImportError message falsely listed xtts as "Known".
+- **`pyproject.toml`** — removed `xtts = ["TTS"]` optional dependency (was never implemented).
+- Import ordering cleanup: `render.py`, `qa.py`, `bench.py`, `package.py` — stdlib imports before business imports, no late-import patterns in module body.
+
+**Part 2 — Output quality**
+
+- **`pipeline/qa.py`** — QA threshold calibration: `PEAK_DB_MAX` relaxed from -1.0 to -0.3 dBFS (loudnorm now targets TP=-1.5; -1.0 was generating false positives). WPS check now skips lines with `<5 words` or `<1500 ms` duration (short attribution tags are legitimately fast; the 1.3 w/s threshold was audiobook-chapter lore, not applicable to 2-word exclamations).
+- **`pipeline/_chorus.py`** *(new)* — generic chorus overlay for any line with `line.chorus = True`. Renders `N_base = min(chorus_size, 4)` distinct voice takes; recursively stacks to `min(chorus_size, 8)` with ±2% atempo jitter + 5–80ms adelay + -2 to -6 dB gain per layer. Lead voice at 0 dB/unjittered for intelligibility. ffmpeg `filter_complex` + `amix`. Deterministic (Random seed 42). Gated by `output.chorus_overlay: true` in config.
+- **`pipeline/schema.py`** — `LineModel` gains `chorus: bool = False` and `chorus_size: int = 3`; `CastModel` gains `chorus_pools: dict[str, list[str]]` for per-speaker voice pool overrides. Both backward-compatible.
+- **`pipeline/_qa_worker.py`** *(new)* — background Whisper QA worker. Single-consumer daemon thread runs faster-whisper `base.en` on each synthesised WAV while MPS samples the next line (CPU-bound + MPS-bound = no contention). Logs low-similarity lines (< 0.70) to `build/<stem>/qa_audit.jsonl`. Wired into `render_chapter`; silently disabled if faster-whisper not installed.
+- **`pipeline/cast.py`** — `merge_from_prior(cast, prior_cast_path)` merges matching character entries from a prior project's `cast.json` (case-insensitive name match). CLI: `--cast-from <path>` on `pipeline.cast --propose`.
+- **`pipeline/retag.py`** *(new)* — emotion-only LLM re-tagger. Rewrites `line.emotion.*` without touching `line.text`. Re-validates faithful wording post-tag to confirm text bytes unchanged. CLI: `python -m pipeline.retag --script build/<stem>/script.json --chapter N [--dry-run]`.
+
+**Part 3 — Speed infrastructure**
+
+- **`tts/chatterbox_backend.py`** — added `synthesize_raw()` (MPS-only: returns numpy + sr + atempo_ratio) and `postprocess()` (CPU-only: encode + tempo stretch). Splits the synthesis pipeline into two phases for future CPU/MPS overlap pipelining. `synthesize()` delegates to both sequentially (unchanged public API). Added `synthesize_batch()` as a sequential fallback stub — ready for a real batch API if Chatterbox adds one.
+
+**Part 4 — UI enhancements**
+
+- **`pipeline/render.py`** — per-line `ProgressEvent` now includes `extra={"cache_hit": bool, "took_s": float, "speaker": str, "text_preview": str}`. Enables ETA calculation and per-line flicker in the rendering UI.
+- **`ui/templates/rendering.html`** — elapsed timer (1s client-side tick), ETA (EMA over last 30 non-cached lines, updated every 5 fresh lines), per-line speaker+text flicker, cache-hit coloring on the progress bar via a second overlay track.
+- **`ui/templates/done.html`** — QA audit link: if `qa_audit.jsonl` exists with ≥1 entry, shows a collapsible section with the count and path.
+- **`ui/templates/options.html`** — chorus overlay checkbox in new "Audio effects" advanced section; value written to per-build `config.yaml` on submit.
+- **`ui/templates/voices.html`** — "Reuse cast from prior project" dropdown (populated via `/api/prior-builds`); upload-your-own reference clip section in the voice picker sheet.
+- **`ui/static/app.js`** — `subscribeProgress` accepts `onLineEvent` callback; `initPriorCast` + `initVoiceRefUpload` functions added.
+- **`ui/app.py`** — `GET /api/prior-builds` (lists build dirs with cast.json); `POST /api/cast-from/{job_id}` (merges prior cast); `POST /api/voice-reference/{job_id}` (normalizes + registers a custom reference clip). `page_done` computes `qa_audit_count`. `api_options` captures `chorus_overlay` checkbox and writes per-build config.yaml.
+- **`ui/services/job_store.py`** — `public_view()` now includes `build_dir` field.
+
+**Part 5 — Tag / identification fixes**
+
+- **`pipeline/normalize.py`** — added `canonicalize_speakers()`. First-seen casing per character becomes canonical; subsequent variant casings are rewritten. Wired into `parse.py` before `split_lumped_dialogue_tags`. Prevents cast.json resolve misses when the LLM emits inconsistent capitalization across chapters.
+- **`pipeline/_short_line_splitter.py`** — added module-level `SHORT_LINE_CHAR_THRESHOLD = 10`; default parameter values use it. Named distinctly from `validate.py`'s `main_threshold` (line-count concept). Pre-computes `speaker_backends` dict before the inner loop in both `find_short_line_pairs` and `find_unpaired_short_lines`, removing repeated `cast.resolve()` calls per line. `find_unpaired_short_lines` now calls `find_short_line_pairs` once and reuses result (was calling it twice).
+
+### Added — Part B pipeline productization from Hyperthief session (retro)
+
+- **`pipeline/normalize.py`** — post-parse splitter for lumped dialogue-attribution tags. Handles both `<Name> said` and pronoun (`he said` / `she said` / `they replied`) patterns, sandwiched or trailing. Called inside `pipeline/parse.py::parse_raw_story` right after faithful-wording passes; re-validates post-split as defense-in-depth. Preserves the `" ".join(line.text) == source` contract via per-line invariant check.
+- **`pipeline/_tags.py`** — shared tag-detection module. Hoists `_TAG_STARTS` / `_TAG_VERBS` / `text_looks_like_attribution_tag` out of `render.py` so both the normalize step and the pause-gap chooser use the same source of truth.
+- **`pipeline/_short_line_splitter.py`** — mitigation for Chatterbox's short-text artifact (GitHub #97: inputs ≤10 chars reliably gibberish). Two strategies: (a) `render_and_split_pair` — pair with adjacent same-speaker line, render combined text, VAD-split on silence; (b) `render_with_appended_tail` — for unpaired short lines, append filler text and VAD-crop. Wired as a pre-synthesis pass in `render_chapter` so the normal per-line loop finds the pre-installed WAVs and cache-hits.
+- **`pipeline/_hardware.py`** — hardware snapshot at start + end of render. Records CPU (perf/efficiency split for M-series), RAM, thermal state (`pmset -g therm`), MPS availability, and (end only) peak RSS + wall-clock. Written to `build/<stem>/hardware_{start,end}.json`. Never raises — best-effort.
+- **`pipeline/validate.py::check_main_character_voice_uniqueness`** — hard-fail validator. Counts lines per speaker, buckets speakers with ≥ `main_character_threshold` (default 10) by resolved `(backend, voice_id)` tuple, errors on collision. Wired into `render_all` — fails before any synthesis, with an actionable `fix` message.
+- **`pipeline/_memory.py::acquire_render_lock`** — fcntl.flock-based lock on `build/.render.lock` (per-build-dir) and `<parent>/.chatterbox.lock` (machine-wide, when Chatterbox is in use). Kernel releases on process exit even on SIGKILL. Wired into `render_all`.
+- **Per-line synthesis timing** in `pipeline/render.py::render_chapter`: `time.perf_counter()` around `backend.synthesize()`, logged at INFO level (`ch02 line 23/56: [FM] chatterbox took 4.7s`). Only on cache-miss; re-runs of unchanged lines stay quiet. Grep target: `grep "took" build/<stem>/run.log | sort -rn -k7`.
+- **Per-line loudness normalization** in `pipeline/render.py`: ffmpeg `loudnorm=I=-16:TP=-1.5:LRA=11` applied per-line right after synthesis (and right after any resample). Config toggles: `output.loudness_norm` (default true), `output.loudness_target_lufs` (default -16). ~100-200 ms/line overhead.
+- **`prompts/parse_story.md`** — rule #2 rewritten from "prefer splitting" to a hard-rule "MUST split". Explicitly covers both `<Name> said` and pronoun patterns with worked examples. Points at the downstream normalizer as a safety net.
+- **`config.yaml`** — new keys: `output.inline_tag_pause_ms: 30` (was implicit `base * 0.4 = 72ms` at code level), `output.loudness_norm: true`, `output.loudness_target_lufs: -16`, `output.short_line_mitigation: true`, `output.short_line_threshold: 10`, `output.short_line_max_takes: 3`, `output.short_line_tail`, `validation.main_character_threshold: 10`.
+
+### Fixed — Hyperthief v2.2 rebuild: Chatterbox short-text artifacts via pair-render + VAD-split
+
+- User flagged Rig's "Hey!" at ~50s of v2.1 as completely garbled. Diagnosed as Chatterbox's known short-text artifact (github.com/resemble-ai/chatterbox/issues/97 — 5-char inputs hallucinate; 10 consecutive retries produced wrong phrases with Whisper similarity ≤0.32). Fix: the new `_short_line_splitter` module applied one-off to all 20 short Chatterbox lines in the cached Hyperthief build (18 pair-renders + 2 tail-appends). All 20 installed cleanly; m4b repackaged as v2.2 (20.7 MB, 28:55).
+
+### Fixed — Hyperthief v2.1 rebuild: pronoun-tag splits + loudness normalization
+
+- **Pronoun-based dialogue tags split retroactively.** The v2 render (2026-04-17 15:20 IST) shipped with 8 character-speaker lines still containing embedded `"..." he said` / `"..." she said` attributions — my post-parse split regex had covered `<Name> said` but missed pronoun patterns. User caught this at ~1:42 of listen-through. A one-shot Python script applied the pronoun-regex split to `build/Hyperthief/script.json`: 334 → 348 lines; faithful-wording validator green.
+- **Cache realignment via hash-based rename.** The per-chapter `{idx:04d}_{speaker}_{hash}.wav` naming means line insertions shift every subsequent idx. A Python script walked the post-split script, matched each expected `(safe_speaker, hash)` against existing files, and renamed via two-phase `.renaming` suffix (76 renames in ch01, 5 in ch02, 62 in ch03, 30 in ch05). 19 genuinely new split lines cache-missed and got fresh Chatterbox synthesis.
+- **Loudness normalization across all 348 cached line WAVs.** Chatterbox clones were rendering -4 to -12 dBFS depending on reference-clip amplitude (LibriVox sources recorded at wildly different levels); Kokoro supports were -10 to -12; narration hit 0 dBFS on some peaks. User heard this as dialogue softer than narration. Applied `ffmpeg loudnorm=I=-16:TP=-1.5:LRA=11` (EBU R128) in-place via tmp-file; 348 files in 36s. Post-norm peaks cluster at -1.5 dBFS (±1 dB).
+- **All 6 chapter MP3s re-stitched** from normalized line WAVs; **m4b repackaged** as `out/Hyperthief.m4b` v2.1 — 21.0 MB, 29:12 duration (10s longer than v2 due to added narrator attribution lines). Cover art + title/artist tags + chapter markers preserved.
+
+### Added — `output.inline_tag_pause_ms` config + smarter dialogue-tag detection in `pipeline/render.py`
+
+- `output.inline_tag_pause_ms` (int, ms) — new optional config override for the silence gap around a narrator attribution tag (`[Rig dialogue] → [narrator "Rig said,"] → [Rig dialogue]` after splitting a lumped tag line). Read from per-story or global `config.yaml`. Defaults to `int(line_pause_ms * 0.4)` (= 72 ms at default base 180) so existing stories render identically. Per-story override lives in `build/<stem>/config.yaml`; `pipeline/config.py::load_config` already deep-merges it over global.
+- `_text_looks_like_attribution_tag()` — new helper that recognizes narrator lines as dialogue tags via three cues: short length (≤30 chars), a `_TAG_STARTS` prefix (`he said`/`she said`/…), or a `<SpeakerName> <tag_verb>` match. The speaker-name case catches splits like `FM said.` / `Jesna asked.` which the old ≤30-char fallback caught only by length coincidence, not intent.
+- `_is_inline_tag()` now delegates to the helper; the `_TAG_STARTS` length threshold bumped from ≤60 to ≤80 to accommodate action-beat tags (`"FM said, pulling on Rig's hand."` = 32 chars, just over the old fallback). Contract otherwise unchanged — sandwiched same-speaker dialogue still required.
+- `_is_trailing_tag()` — **new**. Detects paragraph-final attribution (`[FM dialogue] → [narrator "FM said."]` where the next line crosses a paragraph boundary). Tight pause applies only to the BEFORE side; the AFTER pause falls through to standard speaker-change/paragraph logic since the tag ends the paragraph. Without this, trailing splits got a ~400 ms gap before the tag, reading as an unnatural pre-attribution pause.
+- Hyperthief-specific override: `build/Hyperthief/config.yaml` sets `inline_tag_pause_ms: 10` — user's preferred tightness for this render. Global behavior unchanged.
+- `re` added to `pipeline/render.py` imports for the speaker-name pattern matcher.
+
 ### Added — combined mode: web UI + MCP server in one process; "Use my Claude app" provider now works
 
 - `pipeline/serve.py --mode combined` boots a single uvicorn process that serves the web UI on `/` and an MCP server on `/mcp/sse` + `/mcp/messages/`. Third mode alongside `ui` (web UI only, no MCP) and `mcp` (stdio, for Claude-Code-spawned subprocess use). All three are independent; pick one per launch.

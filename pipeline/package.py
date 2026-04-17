@@ -20,13 +20,12 @@ from typing import Literal
 
 import yaml
 
+from pipeline._ffmpeg import FFMPEG, FFPROBE
 from pipeline.schema import ScriptModel
 
 
 REPO = Path(__file__).resolve().parents[1]
 CFG = yaml.safe_load((REPO / "config.yaml").read_text())
-FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
-FFPROBE = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 OutputFormat = Literal["m4b", "epub3"]
 

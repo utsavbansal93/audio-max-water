@@ -26,6 +26,14 @@ The `text` field in `script.json` is **byte-verbatim** from the source story. Op
 
 `pipeline/render.py` must never import a concrete TTS backend. It always goes through `tts.get_backend(name)` and the `TTSBackend` ABC. Adding a new engine = one file in `tts/`, zero pipeline changes.
 
+## Cast diligence (non-negotiable)
+
+After `pipeline.cast` writes `build/<stem>/cast.json`, and BEFORE calling `pipeline.render`: group characters by `gender` from `script.json`, count unique voice IDs per group. If any gender group has >1 main character (speaker with ≥10 lines) collapsed onto ≤ half as many voices as characters, **stop and surface it to the user** — either (a) swap voices manually via `pipeline.cast --swap`, or (b) switch affected characters to Chatterbox with reference clips in `voice_samples/` (mirroring `cast_gatsby.json`'s hybrid pattern).
+
+Shipping audio where multiple main characters sound identical is a diligence failure, not a pipeline limitation. Kokoro's preset library has few same-gender distinct voices; collapse is the default outcome, not an edge case. The check is five seconds of inspection on `cast.json` and saves the user from discovering it only during playback. Applies to every multi-character render, short stories included — it bit us on Hyperthief (4670 words, 5 male mains → one preset) on 2026-04-17.
+
+Until the P0 auto voice-sample search (see `BACKLOG.md`) lands, the orchestrator (Claude) does this check by hand and sources reference clips from LibriVox as a one-off.
+
 ## Environment
 
 - Python: `.venv/bin/python` (Python 3.12, created from `/opt/homebrew/opt/python@3.12/bin/python3.12`)

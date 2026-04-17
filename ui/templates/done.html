@@ -16,5 +16,16 @@
   </div>
 
   <p class="caption muted file-path"><code>{{ job.output_path }}</code></p>
+
+  {% if qa_audit_count %}
+  <details class="advanced" style="margin-top: 24px; text-align: left;">
+    <summary class="caption muted">{{ qa_audit_count }} line{{ "s" if qa_audit_count != 1 else "" }} flagged by Whisper QA</summary>
+    <p class="caption muted" style="margin-top: 8px;">
+      These lines had low Whisper transcription similarity (&lt; 0.70). Review
+      <code>{{ job.build_dir }}/qa_audit.jsonl</code> for details. No action required
+      if playback sounds correct.
+    </p>
+  </details>
+  {% endif %}
 </section>
 {% endblock %}

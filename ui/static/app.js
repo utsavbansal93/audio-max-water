@@ -243,6 +243,11 @@
         fillEl.style.width = pct + "%";
       }
 
+      // Per-line callback: passes cache_hit, took_s, speaker, text_preview.
+      if (data.stage === "render" && data.phase === "progress" && opts.onLineEvent) {
+        opts.onLineEvent(data);
+      }
+
       // Navigation on terminal stage completion.
       if (data.phase === "done" && terminalStages.has(data.stage)) {
         const redirect = (data.extra && data.extra.redirect) || opts.doneRedirect;
@@ -434,6 +439,7 @@
       });
       listEl.appendChild(showAll);
 
+      if (opts.onSheetOpen) opts.onSheetOpen(character);
       if (!sheet.open) sheet.showModal();
     }
 
@@ -464,6 +470,109 @@
       if (currentPlayingBtn) {
         currentPlayingBtn.classList.remove("playing");
         currentPlayingBtn = null;
+      }
+    });
+  };
+
+  // --- prior-project cast reuse -------------------------------------------
+
+  AMW.initPriorCast = function initPriorCast(opts) {
+    const sel = document.getElementById("prior-build-select");
+    const applyBtn = document.getElementById("prior-cast-apply");
+    const statusEl = document.getElementById("prior-cast-status");
+    if (!sel || !applyBtn) return;
+
+    fetch("/api/prior-builds")
+      .then((r) => r.json())
+      .then((builds) => {
+        sel.innerHTML = "";
+        if (!builds.length) {
+          sel.innerHTML = '<option value="">No prior projects found</option>';
+          return;
+        }
+        sel.innerHTML = '<option value="">— select a prior project —</option>';
+        builds.forEach((b) => {
+          const opt = document.createElement("option");
+          opt.value = b.path;
+          opt.textContent = b.title || b.name;
+          sel.appendChild(opt);
+        });
+        applyBtn.disabled = false;
+      })
+      .catch(() => {
+        sel.innerHTML = '<option value="">Could not load prior projects</option>';
+      });
+
+    applyBtn.addEventListener("click", async () => {
+      const path = sel.value;
+      if (!path) return;
+      applyBtn.disabled = true;
+      statusEl.hidden = false;
+      statusEl.textContent = "Applying…";
+      const resp = await fetch(`/api/cast-from/${opts.jobId}`, {
+        method: "POST",
+        body: new URLSearchParams({ prior_path: path }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        statusEl.textContent = data.message + " — reloading…";
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        statusEl.textContent = "Error: " + (err.detail || "unknown");
+        applyBtn.disabled = false;
+      }
+    });
+  };
+
+  // --- reference clip upload (voice picker sheet) -------------------------
+
+  AMW.initVoiceRefUpload = function initVoiceRefUpload(opts) {
+    const input = document.getElementById("sheet-ref-input");
+    const label = document.getElementById("sheet-ref-label");
+    const btn = document.getElementById("sheet-ref-upload");
+    const status = document.getElementById("sheet-ref-status");
+    if (!input || !btn) return;
+
+    // character is set when the sheet opens; stored in closure.
+    let currentCharacter = null;
+
+    // Called by initVoicePicker when it opens the sheet for a character.
+    AMW._setRefCharacter = function(c) { currentCharacter = c; };
+
+    input.addEventListener("change", () => {
+      if (input.files.length) {
+        label.textContent = input.files[0].name;
+        btn.disabled = false;
+      } else {
+        label.textContent = "Choose WAV / MP3…";
+        btn.disabled = true;
+      }
+      if (status) status.hidden = true;
+    });
+
+    btn.addEventListener("click", async () => {
+      if (!input.files.length || !currentCharacter) return;
+      btn.disabled = true;
+      status.hidden = false;
+      status.textContent = "Uploading and normalizing…";
+
+      const fd = new FormData();
+      fd.append("character", currentCharacter);
+      fd.append("file", input.files[0]);
+
+      const resp = await fetch(`/api/voice-reference/${opts.jobId}`, {
+        method: "POST",
+        body: fd,
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        status.textContent = `Registered as "${data.voice_id}" — reloading…`;
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        status.textContent = "Error: " + (err.detail || "upload failed");
+        btn.disabled = false;
       }
     });
   };

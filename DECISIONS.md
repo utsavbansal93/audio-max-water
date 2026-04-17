@@ -682,3 +682,159 @@ My Phase 2.2 smoke test used `zipfile.ZipFile.write(p, p.relative_to(src))` whic
 - Module-global session capture is fine for local-single-user; not safe for multi-user or remote MCP. Filed as a non-concern (the tool is local-first by design).
 
 **Retrospective lesson.** *Scope-cuts from earlier phases want a tracking entry, not a dead-end stub.* Phase 2.2 stubbed the sampling provider with a clear `ConfigurationError.fix` string pointing at the eventual work. When the user hit that error they had the exact setup instructions in hand — which made the conversation to "now wire this up" cheap. A stub with guidance is better than a silent feature gap OR a half-built implementation. Always leave signposts when you scope-cut.
+
+---
+
+## 0035 · 2026-04-17 · `inline_tag_pause_ms` as a per-story config knob, not a new `LineModel` field
+
+**Context.** Hyperthief had 43 lines where a character's dialogue carried an embedded attribution tag (`"foo," Rig said, "bar"` in one line). User preference (heard through iteration: v2 auditions → v4 at 180 ms → v5 at 30/60/180 → v6 at 10/30/72): splitting the tag onto its own narrator line is correct, but the silence gap around it should be 10 ms — much shorter than the pipeline's standard 72 ms (`line_pause_ms * 0.4`).
+
+The pause gap is decided in `pipeline/render.py::_pause_for`. The inline-tag case was hardcoded `int(base * 0.4)`. Making it configurable is a 3-line change; making it tighter in Hyperthief without hurting other renders is the goal.
+
+**Options considered.**
+- **(α) Change the 0.4 constant globally.** Affects every book. P&P/Gatsby renders would also tighten. Risks regressing approved audio. Rejected.
+- **(β) Add per-story `config.yaml` override.** Reads `output.inline_tag_pause_ms`; defaults to the current `int(base * 0.4)` when unset. `load_config(build_dir)` already deep-merges `build/<stem>/config.yaml` over global. Zero impact on other stories; Hyperthief opts in via `build/Hyperthief/config.yaml`.
+- **(γ) New `LineModel.tight_join_ms: int | None` field.** Maximally explicit — every line carries its own gap hint. Schema change, LLM parse prompt update (force the LLM to emit per-line timing decisions), validator change, migration of existing scripts. Overkill for a single-knob need.
+- **(δ) Compute tightness from the text shape** (all-lowercase narrator lines shorter than 30 chars → tight-join, else normal). Fragile; couples pause choice to text-surface features rather than intent.
+
+**Decision.** (β) — add `output.inline_tag_pause_ms` to the config schema with no required value. `_pause_for` reads it with a `get(... , int(base * 0.4))` default. Per-story override at `build/Hyperthief/config.yaml: output.inline_tag_pause_ms: 10`. Global `config.yaml` left untouched.
+
+Paired with two related `render.py` changes (not separate ADRs — they shore up the detection that the gap applies to):
+1. `_is_inline_tag` now also recognizes `<SpeakerName> <tag_verb>` prefixes, not just the anonymous-pronoun `_TAG_STARTS`. Catches splits like `FM said.` or `Jesna asked.` which the prior ≤30-char length fallback caught only coincidentally.
+2. `_is_trailing_tag` (new) detects paragraph-final tags where the next line crosses a paragraph boundary. Tight pause applies BEFORE the tag only; the AFTER pause falls through to normal speaker-change logic since the paragraph is ending. Without this, trailing splits got ~400 ms of pre-attribution silence — the failure mode the user flagged before settling on the config approach.
+
+**Consequences.**
+- Existing renders untouched. Audit: Kokoro-only legacy runs hit the same code path, get the same 72 ms default.
+- Hyperthief renders with 10 ms around ~48 inline-tag narrator lines (43 split plus a few pre-existing short narrator beats that now trigger on the bumped length threshold). ~3 seconds of silence removed across the ~30-minute audiobook.
+- Future stories can tune per-taste in one line of YAML. If several books converge on a preference, promote the value to the global default.
+- Tag-detection improvements are backward-compatible: any narrator line previously caught as a tag is still caught; the expanded heuristics only add coverage.
+
+**Retrospective lesson.** *Config knobs beat schema expansion when the knob's value is orthogonal to the story's structure.* Line-level timing hints (γ) could theoretically be smarter — the LLM might know per-line whether a pause should be tight or normal — but the orthogonality test fails: attribution-tag tightness is a render-engine preference, not a parse decision. Keeping it as render config means the parse prompt and `script.json` stay source-faithful, and the render side gets to tune its own knobs without round-trip edits through the whole pipeline.
+
+---
+
+## 0036 · 2026-04-17 · Always-on post-parse dialogue-tag normalizer
+
+**Context.** The Hyperthief v2 render shipped with 43 `<Name> said` patterns lumped on character speaker lines (later hand-split to narrator) and — separately, worse — 8 pronoun-based `he said` / `she said` patterns also lumped, caught only on user listen-through at v2.1. The LLM parse prompt (`prompts/parse_story.md`) asked for splits but was ambiguous enough that compliance varied. Three iterations of "just trust the prompt" + one hand-split regex + one listen-through-and-fix cycle argued we needed a mechanical safety net.
+
+**Options considered.**
+- **(α) Prompt-only fix.** Tighten the parse prompt (we did) and hope. Rejected as sole mitigation — Opus can still skip splits under caching or edge-case conditions.
+- **(β) Config-gated normalizer** — flag in `config.yaml` defaulting off. Rejected: users forget; the very cases that need it most are the ones where someone new is rendering and doesn't know the flag.
+- **(γ) Always-on post-parse normalizer.** Runs inside `parse_to_disk` after the faithful-wording check. Safe because the split preserves concat-equals-source by construction (and we re-validate post-split as defense-in-depth). Cost is ~milliseconds on a clean script (the splitter walks lines, no-ops if nothing matches).
+- **(δ) Fail the render if lumped tags are present.** Strict but annoying: forces retry-on-parser-error rather than fix-automatically. Rejected; mechanical fix is cheap and the output is deterministic.
+
+**Decision.** (γ). New module `pipeline/normalize.py::split_lumped_dialogue_tags` runs unconditionally after parse. Logs split count via `log.info("normalize: split N lumped dialogue tags")` so operators see when the safety net catches something. Paired with the prompt tightening in `prompts/parse_story.md` rule #2 so the expected steady state is n_splits=0 (prompt works) with the normalizer catching regressions.
+
+**Consequences.**
+- Every future render is immune to the dialogue-tag-lumping class of bug. Hyperthief v2 and v2.1 required manual one-shot fixes; v3+ would auto-recover.
+- Covers both `<Name> said` and pronoun (`he said` / `she said`) patterns in one module; both were separate-issues-we-discovered-separately in this session, now one code path.
+- `pipeline/_tags.py` factored out so the pause-gap chooser in `render.py` and the splitter use the same definition of "this is an attribution tag" — no drift.
+- Builds that somehow produce a whitespace-divergent split (source had irregular multi-space between segments) fall back to leaving the line alone and emit a WARN. Matches the "preserve faithful-wording above all" project invariant.
+
+**Retrospective lesson.** *Prompts are soft; safety nets are hard.* Even a well-specified prompt gets followed partially. For structural invariants (like "attribution tags live on their own line"), pair the prompt with a post-parse mechanical enforcement step. The prompt teaches intent; the code guarantees outcome.
+
+
+## 0037 · 2026-04-17 · Loudness normalization at the per-line render step, EBU R128 I=-16
+
+**Context.** Hyperthief v2 shipped with Chatterbox main-character dialogue at -4 to -12 dBFS peak (amplitude inherited from each LibriVox reference clip, which were recorded at wildly different levels) while Kokoro narrator/support lines peaked at 0 to -4 dBFS. User heard this as "dialogue quieter than narration, narration clear, dialogue muffled." Part A fixed the shipped m4b via one-shot batch loudnorm over cached WAVs; the question was where to land normalization for future renders.
+
+**Options considered.**
+- **(α) Chapter-level loudnorm** — one loudnorm pass over each `chapter_NN.mp3` before m4b assembly. Simplest, but the EBU algorithm integrates over the whole chapter's duration, so a loud Kokoro narrator line will pull quieter Chatterbox dialogue up slightly but not consistently. Doesn't solve the per-line spread problem.
+- **(β) Per-line loudnorm** — apply `loudnorm=I=-16:TP=-1.5:LRA=11` to each line's WAV right after synthesis (and after any resample). Every line targets the same integrated loudness. Cost: ~100-200 ms per line (< 1 % of a Chatterbox render). Chosen.
+- **(γ) Reference-clip pre-normalization** — normalize the Chatterbox reference WAVs in `voice_samples/` so Chatterbox inherits a uniform amplitude ceiling. Tried empirically during audition iteration: Chatterbox's amplitude depends on more than the reference's peak (exaggeration slider, text content), so pre-normalizing doesn't fully equalize per-line output. Use as a complement, not a replacement.
+- **(δ) Post-synthesis peak normalization** — scalar gain per line to hit e.g. -2 dBFS peak. Cheaper than loudnorm but not perceptual: a line with a single spike at -2 dBFS and low average energy ends up softer than a line with consistent -4 dBFS. Rejected.
+
+**Decision.** (β) per-line EBU R128 loudnorm, I=-16 LUFS, TP=-1.5 dBFS (true-peak limit to prevent clipping), LRA=11 (moderate loudness range target, standard for spoken word). Config: `output.loudness_norm` (default true), `output.loudness_target_lufs` (default -16). In-place via tmp file + replace to match the existing resample pattern.
+
+**Why -16 LUFS specifically.** Audible's published target for voice content is -18 to -20 LUFS integrated (broadcast-distribution standard) but our output is for personal playback where a bit louder is fine. -16 LUFS is the YouTube voice target. Sits above Audible's floor without clipping. Revisit if mastering complaints arise.
+
+**Consequences.**
+- Hybrid Kokoro + Chatterbox renders now ship with consistent perceived loudness — no manual batch normalization step needed post-build.
+- Adds ~30-60 s total to a typical 300-line render (~1 % wall-clock). Negligible.
+- Existing Gatsby / P&P renders will slightly shift loudness on any re-render — acceptable one-time change, not a perceptual regression.
+- The config toggle means people rendering on devices where ffmpeg loudnorm is slow can turn it off. `loudness_target_lufs` lets them tune.
+
+**Retrospective lesson.** *Perceived loudness is not peak loudness.* Kokoro and Chatterbox produce spectrally different audio; two clips with the same peak can differ 3-6 dB in perceived loudness. EBU R128 integrates loudness over time and accounts for frequency weighting (approximating human hearing), which is why it produces the consistent result a simple peak normalizer cannot.
+
+
+## 0038 · 2026-04-17 · Chatterbox short-text mitigation via pair-render + VAD-split (not retry)
+
+**Context.** Chatterbox's diffusion sampler reliably gibberishes on ≤10-char text inputs — 10 consecutive retries on Rig's `"Hey!"` during Hyperthief v2.1 all produced wrong phrases (Whisper similarity 0.0-0.32; best "and its all hey"). Confirmed known issue: [resemble-ai/chatterbox#97](https://github.com/resemble-ai/chatterbox/issues/97). Kokoro-only renders don't see this because Kokoro's non-autoregressive pipeline is robust to short inputs; it's autoregressive Chatterbox specifically.
+
+**Options considered.**
+- **(α) Retry until sim ≥ threshold.** Best-of-N takes, Whisper-scored. Tried: 10 takes could not produce a clean `"Hey!"`. Chatterbox is stuck in a local minimum for ultra-short inputs — retry does not escape it.
+- **(β) Parameter tuning.** Chatterbox's docs suggest lower `cfg_weight` (0.0 instead of 0.5) for some quality issues. Tried empirically within the existing backend; improvement on short inputs is marginal.
+- **(γ) Pair-render + VAD-split.** Detect short lines with an adjacent same-speaker line, render the COMBINED text as one Chatterbox call (long enough to stabilize), use ffmpeg `silencedetect` to find the mid-phrase pause, cut the output WAV into two halves, install each at the expected cache filename. Works because Chatterbox needs minimum tokens to stabilize — feeding it a combined prompt crosses that threshold.
+- **(δ) Tail-append + VAD-crop.** For unpaired short lines, render `<line.text> <filler>` where filler is a tonally-neutral declarative sentence. Discard the tail via silence-detect + crop.
+- **(ε) Fall back to Kokoro for short lines.** Voice timbre discontinuity for one word. Simple but lossy; rejected as primary, acceptable as emergency fallback.
+
+**Decision.** (γ) + (δ) as primary, paired as a single pre-synthesis pass in `render_chapter`. Implemented in `pipeline/_short_line_splitter.py`. Cache-file installation preserves the normal per-line cache contract: the split halves end up at exactly the filenames the per-line loop would look for, so the main loop cache-hits them naturally.
+
+Proof on Hyperthief: 18 paired short lines + 2 unpaired short lines, all 20 successfully mitigated (100%). Retry-based approach failed on even 1/1.
+
+**Why VAD-split over alternatives specifically.**
+- Pair-render only works when the same speaker has two adjacent short-enough lines. Present in dialogue scenes (~90% of the cases we hit). Tail-append covers the rest.
+- Cache-compatible: we write WAVs at exactly the pipeline's expected hash-based filename, so no pipeline-level special-casing for split lines.
+- Loudness-normalize-compatible: each half is loudnormed before install, matching B4.
+
+**Consequences.**
+- Chatterbox can now be used safely for dialogue-heavy books with short exclamations / interjections, previously a known fail mode.
+- Adds a pre-synthesis pass to `render_chapter` that runs once per chapter. No cost when the chapter has no short Chatterbox lines (the detector returns empty lists).
+- Config knobs: `output.short_line_mitigation`, `short_line_threshold`, `short_line_max_takes`, `short_line_tail` — tunable but the defaults should rarely need changing.
+- Not a general Chatterbox-hallucination fix. Garbled mid-length outputs (50-200 chars) still happen occasionally; those need a parallel QA sanity check (backlog item) to detect and retry. This decision covers only the deterministic short-input failure mode.
+
+**Retrospective lesson.** *When a model has a known failure mode bounded by an easily-detectable input property (in this case, text length), pre-empt it at the input layer rather than retry at the output layer.* Retry works when generation is stochastic and the target is reachable; it doesn't work when the model is stuck on a specific input shape. Pair-render reshapes the input so it crosses the model's stability threshold. This is the same pattern as prompt-engineering around known LLM weaknesses.
+
+
+## 0039 · 2026-04-17 · QA threshold calibration: exempt short lines from WPS; relax PEAK_DB_MAX
+
+**Context.** `pipeline/qa.py` checks two things per synthesised WAV: (a) words-per-second rate (must be between thresholds — suspiciously fast = garble, suspiciously slow = silence), and (b) peak dBFS must not exceed `PEAK_DB_MAX`. Both thresholds were sourced from audiobook-chapter lore and needed re-evaluation after Hyperthief v2 introduced loudnorm + short attribution-tag lines.
+
+**Options considered for WPS exemption.**
+- **(α) Exempt by word count only.** Lines with < 5 words skip the WPS check. Simple.
+- **(β) Exempt by duration only.** Lines shorter than 1500 ms are exempted. Catches short content with unusual verbosity.
+- **(γ) Exempt by both.** `<5 words` OR `<1500 ms`. Most conservative — if either criterion says "short", the line is exempted.
+
+**Decision.** (γ): both thresholds. `MIN_WORDS_FOR_WPS_CHECK = 5`, `MIN_DUR_FOR_WPS_CHECK_MS = 1500`. Reason: a 3-word narrator attribution tag ("Rig said." = 2 content words, 0.8 s) fails the WPS check even when the synthesis is perfectly correct. The WPS threshold (1.3 w/s) was derived for long-form audiobook chapters where pacing is meaningful; it doesn't apply to short attribution beats. Logging the skip reason preserves observability.
+
+**Options considered for PEAK_DB_MAX.**
+- **(α) Keep -1.0 dBFS.** Previously, this would catch clipping. But with per-line loudnorm targeting TP=-1.5 dBFS true-peak, a legitimate loud peak will be around -1.5 dBFS — so -1.0 was firing on correctly-normalized audio.
+- **(β) Relax to -0.3 dBFS.** The true-peak limiter is set to -1.5; a post-loudnorm peak above -0.3 is genuinely suspicious (loudnorm failed or the file wasn't normalized). Leaves 0.7 dB of margin.
+
+**Decision.** (β): `PEAK_DB_MAX = -0.3`. Aligns the check with the loudnorm contract; removes false positives without removing the clipping detector entirely.
+
+**Consequences.**
+- QA now correctly skips attribution tags; the audit log (qa_audit.jsonl) reflects only genuine rendering problems. Denominator integrity restored.
+- The clipping check still fires on unnormalized audio (e.g. someone bypasses the loudnorm pass). Not a regression.
+
+
+## 0040 · 2026-04-17 · Chatterbox synthesize_batch: sequential fallback, not real batch
+
+**Context.** Plan item 3.1 proposed batching multiple Chatterbox lines into a single diffusion pass for 2–3× throughput on short attribution-tag clusters. The `TTSBackend.synthesize_batch()` interface was added as a hook for this.
+
+**Options considered.**
+- **(α) Implement real batching now.** Stack tokenized inputs, pad to same length, run one diffusion call. Requires testing whether Chatterbox's checkpoint supports variable-length batch inference without audio-quality degradation from padding-mask leakage.
+- **(β) Sequential fallback, interface-only.** Add `synthesize_batch()` that calls `synthesize()` in a loop. Establishes the caller contract; zero risk of quality regression; real batching can be dropped in when verified.
+
+**Decision.** (β): sequential fallback. Reason: the Chatterbox checkpoint batching behavior is untested. The comment in `synthesize_batch` documents exactly when to upgrade: "call generate() with a list of texts and verify shape returns batch_size × time — if output per-line differs audibly from sequential, the padding masking is wrong." The interface is correct; the implementation is conservative.
+
+**Consequences.** No throughput gain now. No regression risk. The upgrade path is one function body rewrite, no interface changes.
+
+
+## 0041 · 2026-04-17 · CPU/MPS overlap pipelining: deferred (CPU share too small to matter)
+
+**Context.** Plan item 3.2 proposed overlapping Chatterbox's CPU post-processing (encode + atempo + loudnorm) with the next line's MPS sampling using a "submit N, collect N-1" ThreadPoolExecutor pattern. The `synthesize_raw()` + `postprocess()` API split was added to the backend to enable this.
+
+**Analysis (post-implementation).** Measured per-Chatterbox-line timing from Hyperthief v2 BENCHMARKS:
+- MPS synthesis: ~18–20 s/line (dominant)
+- CPU postprocess (encode + atempo): ~50–200 ms/line
+- Per-line loudnorm (ffmpeg, added in Part B): ~100–150 ms/line
+- Total CPU: ~150–350 ms/line = **< 2 % of per-line time**
+
+Overlap savings = min(CPU_time, next_MPS_time) ≈ 300 ms/line. Across 300 Chatterbox lines: ~90 s saved on a 6200 s render = **1.4 % absolute speedup**. Not worth the loop restructuring complexity (pending futures, flush at end-of-chapter, error propagation from a detached thread).
+
+The plan's "20–30% speedup" estimate conflated the per-line CPU fraction (real, but small) with absolute render improvement (negligible).
+
+**Decision.** Defer. The `synthesize_raw()` + `postprocess()` API split stays — it is architecturally correct and will be the foundation if/when Chatterbox adds a batch API (which would shift the balance dramatically). Proper "submit N, collect N-1" pipelining deferred until benchmark data shows it matters.
+
+**Consequences.** No throughput change. API is in place for future use. BENCHMARKS.md should include a row if this is ever revisited.

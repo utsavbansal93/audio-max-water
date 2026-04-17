@@ -7,53 +7,41 @@ has changed — so re-running render.py is cheap for unchanged chapters.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
+import logging
+import re
+import shutil
 import subprocess
+import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Iterable
 
 import yaml
 
+from pipeline._cache import line_hash as _line_hash
 from pipeline._events import ProgressCallback, ProgressEvent, emit
+from pipeline._ffmpeg import FFMPEG
+from pipeline._tags import text_looks_like_attribution_tag as _text_looks_like_attribution_tag
 from pipeline.config import load_config
 from pipeline.schema import CastModel, ChapterModel, LineModel, ScriptModel
 from pipeline.validate import check_voice_consistency
 from tts import Emotion, get_backend
 from tts.backend import TTSBackend
 
-
-import shutil
+log = logging.getLogger(__name__)
 
 REPO = Path(__file__).resolve().parents[1]
 CFG = load_config()
-FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
-
-
-def _line_hash(line: LineModel, voice_id: str) -> str:
-    payload = json.dumps({
-        "text": line.text,
-        "voice": voice_id,
-        "emotion": line.emotion.model_dump(),
-    }, sort_keys=True)
-    return hashlib.sha1(payload.encode()).hexdigest()[:12]
-
-
-_TAG_STARTS = (
-    "he said", "she said", "he replied", "she replied", "he added", "she added",
-    "he asked", "she asked", "he whispered", "she whispered", "he answered",
-    "she answered", "he muttered", "she muttered", "he continued", "she continued",
-    "her companion", "his companion",
-)
 
 
 def _is_inline_tag(prev: LineModel | None, cur: LineModel, nxt: LineModel | None) -> bool:
-    """Detect a narrator line that is a dialogue attribution tag.
+    """Detect a narrator line that is a dialogue attribution tag SANDWICHED
+    between two dialogue lines of the same speaker (the `"foo," Rig said, "bar"`
+    pattern, once split into three lines).
 
-    An inline tag is a short narrator line sandwiched between two dialogue
-    lines of the same speaker ("he replied," between two Darcy lines). These
-    should hug both sides — full speaker-change pauses make them sound
-    detached from the dialogue they attribute.
+    Tight pause applies on BOTH sides — the tag should hug the surrounding
+    dialogue. See also `_is_trailing_tag` for tags at paragraph end.
     """
     if cur.speaker != "narrator":
         return False
@@ -63,15 +51,23 @@ def _is_inline_tag(prev: LineModel | None, cur: LineModel, nxt: LineModel | None
         return False
     if prev.speaker != nxt.speaker:
         return False
-    text_norm = cur.text.strip().lower().rstrip(",.;:")
-    # Short + starts with a known tag → treat as inline.
-    if len(cur.text) <= 60 and any(text_norm.startswith(t) for t in _TAG_STARTS):
-        return True
-    # Even shorter fallback: very short narrator line between same-speaker
-    # dialogue is almost always a tag.
-    if len(cur.text) <= 30:
-        return True
-    return False
+    return _text_looks_like_attribution_tag(cur.text, speaker_hint=prev.speaker)
+
+
+def _is_trailing_tag(prev: LineModel | None, cur: LineModel) -> bool:
+    """Detect a narrator line that is a short attribution tag following a
+    character's final dialogue fragment in a paragraph (the `"foo," FM said.`
+    pattern, once split).
+
+    Tight pause applies only on the BEFORE side — the tag hugs the preceding
+    dialogue. The pause AFTER falls through to normal paragraph/speaker-change
+    logic since the next line crosses a paragraph boundary.
+    """
+    if cur.speaker != "narrator":
+        return False
+    if prev is None or prev.speaker == "narrator":
+        return False
+    return _text_looks_like_attribution_tag(cur.text, speaker_hint=prev.speaker)
 
 
 def _pause_for(
@@ -93,14 +89,24 @@ def _pause_for(
       - Slow pace (pace < -0.15): add approach time.
     """
     base = CFG["output"]["line_pause_ms"]
+    # Explicit override for dialogue-tag gaps. Defaults to the historical
+    # `int(base * 0.4)` (= 72 ms at default base=180 ms) if unset, so existing
+    # stories render identically. Per-story override via build_<stem>/config.yaml
+    # lets a book dial the tag tightness in without changing other pauses.
+    inline_gap = CFG["output"].get("inline_tag_pause_ms", int(base * 0.4))
     if prev is None:
         return 0
 
     # Inline tag cases hug the surrounding dialogue tightly.
     if _is_inline_tag(prev, cur, nxt):
-        return int(base * 0.4)
+        return inline_gap
     if prev_is_inline_tag:
-        return int(base * 0.4)
+        return inline_gap
+    # Trailing tag: short narrator attribution after the last dialogue fragment
+    # of a paragraph. Tighten the BEFORE pause only; the AFTER pause (into the
+    # next paragraph) falls through to standard paragraph/speaker logic.
+    if _is_trailing_tag(prev, cur):
+        return inline_gap
 
     speaker_change = prev.speaker != cur.speaker
     cur_int = cur.emotion.intensity
@@ -173,6 +179,68 @@ def render_chapter(
 
     sr = CFG["output"]["sample_rate"]
 
+    # ---- Pre-synthesis pass: short-line mitigation for Chatterbox ----
+    # Chatterbox reliably gibberishes on ≤10-char inputs (GitHub #97). For
+    # each such line we either pair-render with an adjacent same-speaker
+    # dialogue (and VAD-split) or tail-append a filler phrase (and VAD-crop).
+    # Runs BEFORE the per-line loop so the main loop finds the split/cropped
+    # WAVs already cached and simply uses them.
+    if CFG.get("output", {}).get("short_line_mitigation", True):
+        from pipeline._short_line_splitter import (
+            find_short_line_pairs, find_unpaired_short_lines,
+            render_and_split_pair, render_with_appended_tail,
+        )
+        threshold = CFG["output"].get("short_line_threshold", 10)
+        # Build a tiny ScriptModel with just this chapter so the helpers work.
+        from pipeline.schema import ScriptModel
+        one_chapter_script = ScriptModel(
+            title="", characters=[],
+            chapters=[chapter],
+        )
+        short_pairs = find_short_line_pairs(
+            one_chapter_script, cast, short_threshold=threshold, backend_name="chatterbox",
+        )
+        short_solo = find_unpaired_short_lines(
+            one_chapter_script, cast, short_threshold=threshold, backend_name="chatterbox",
+        )
+        if short_pairs or short_solo:
+            log.info("short-line mitigation: ch%02d — %d pair(s), %d solo",
+                     chapter.number, len(short_pairs), len(short_solo))
+        for p in short_pairs:
+            entry = cast.resolve(p.line_short.speaker)
+            be = _get_backend_cached(backends, entry.backend)
+            ok, reason = render_and_split_pair(
+                p, be, entry.backend, entry.voice, build_dir,
+                max_takes=CFG["output"].get("short_line_max_takes", 3),
+                sample_rate=sr,
+                loudness_norm=CFG["output"].get("loudness_norm", True),
+            )
+            if not ok:
+                log.warning("  pair-split failed ch%02d idx=%d+%d: %s — falling back to normal synth",
+                            chapter.number, p.idx_short, p.idx_pair, reason)
+        for _ch_num, idx, line in short_solo:
+            entry = cast.resolve(line.speaker)
+            be = _get_backend_cached(backends, entry.backend)
+            ok, reason = render_with_appended_tail(
+                line, idx, chapter.number, be, entry.backend, entry.voice, build_dir,
+                tail=CFG["output"].get("short_line_tail", "That was the plan."),
+                max_takes=CFG["output"].get("short_line_max_takes", 4),
+                sample_rate=sr,
+                loudness_norm=CFG["output"].get("loudness_norm", True),
+            )
+            if not ok:
+                log.warning("  tail-append failed ch%02d idx=%d: %s — falling back to normal synth",
+                            chapter.number, idx, reason)
+
+    # Start background Whisper QA worker (CPU-bound, overlaps with MPS synthesis).
+    from pipeline._qa_worker import QAWorker
+    qa_worker = QAWorker(
+        audit_path=build_dir / "qa_audit.jsonl",
+        threshold=CFG.get("output", {}).get("qa_sim_threshold", 0.70),
+        whisper_model=CFG.get("output", {}).get("qa_whisper_model", "base.en"),
+    )
+    qa_worker.start()
+
     wav_paths: list[Path] = []
     prev: LineModel | None = None
     prev_was_inline_tag = False
@@ -215,9 +283,27 @@ def render_chapter(
                 _make_silence(pause_ms, sr, silence_path)
             wav_paths.append(silence_path)
 
-        if not wav_path.exists():
+        cache_hit = wav_path.exists()
+        took_s = 0.0
+        if not cache_hit:
             emo = Emotion(**line.emotion.model_dump())
-            wav_bytes, wav_sr = backend.synthesize(line.text, voice_id, emotion=emo)
+            t0 = time.perf_counter()
+            chorus_on = (
+                line.chorus
+                and CFG.get("output", {}).get("chorus_overlay", True)
+            )
+            if chorus_on:
+                from pipeline._chorus import render_chorus
+                wav_bytes = render_chorus(
+                    line, cast, backend, build_dir,
+                    sample_rate=sr,
+                    loudness_norm=CFG.get("output", {}).get("loudness_norm", True),
+                )
+                wav_sr = sr
+            else:
+                wav_bytes, wav_sr = backend.synthesize(line.text, voice_id, emotion=emo)
+            synth_dt = time.perf_counter() - t0
+            took_s = round(synth_dt, 1)
             wav_path.write_bytes(wav_bytes)
             if wav_sr != sr:
                 # Resample via ffmpeg in place.
@@ -228,18 +314,38 @@ def render_chapter(
                     "-i", str(tmp), "-ar", str(sr), str(wav_path),
                 ], check=True)
                 tmp.unlink()
+            # B4: loudness-normalize so Chatterbox and Kokoro lines sit at
+            # equal perceived level. See DECISIONS #0037. ~100ms/line overhead.
+            if CFG.get("output", {}).get("loudness_norm", True):
+                lufs = CFG["output"].get("loudness_target_lufs", -16)
+                ln_tmp = wav_path.with_suffix(".ln.wav")
+                subprocess.run([
+                    FFMPEG, "-y", "-loglevel", "error", "-i", str(wav_path),
+                    "-af", f"loudnorm=I={lufs}:TP=-1.5:LRA=11",
+                    "-ar", str(sr), "-ac", "1", str(ln_tmp),
+                ], check=True)
+                ln_tmp.replace(wav_path)
+            # B3: per-line synthesis timing (cache-miss only; re-renders stay quiet)
+            log.info("ch%02d line %d/%d: [%s] %s took %.1fs",
+                     chapter.number, idx, n_lines, line.speaker, entry.backend, synth_dt)
+            # Enqueue for background Whisper QA (CPU-bound; overlaps with next MPS synthesis).
+            qa_worker.enqueue(wav_path, line.text, chapter.number, idx)
         wav_paths.append(wav_path)
         prev = line
 
-        # Emit per-line progress. Truncate the text preview so UIs aren't
-        # flooded; the full script is elsewhere if they need it.
+        # Emit per-line progress. cache_hit + took_s let the UI render an
+        # ETA and color-code cached vs fresh segments.
         preview = line.text[:60] + ("…" if len(line.text) > 60 else "")
         emit(on_progress, ProgressEvent(
             stage="render", phase="progress",
             message=f"ch{chapter.number:02d} line {idx}/{n_lines}: [{line.speaker}] {preview}",
             current=idx, total=n_lines,
             chapter=chapter.number, total_chapters=total_chapters,
+            extra={"cache_hit": cache_hit, "took_s": took_s,
+                   "speaker": line.speaker, "text_preview": preview},
         ))
+
+    qa_worker.stop()
 
     # Stitch via ffmpeg concat.
     concat_file = ch_dir / "concat.txt"
@@ -264,6 +370,7 @@ def render_all(
     backends: dict[str, TTSBackend] | None = None,
 ) -> list[Path]:
     global CFG
+    render_start_t = time.perf_counter()
     script = ScriptModel.model_validate(json.loads(script_path.read_text()))
     cast = CastModel.model_validate(json.loads(cast_path.read_text()))
     build_dir = build_dir or (REPO / "build")
@@ -280,6 +387,21 @@ def render_all(
     # Patch the cast's default backend so resolve() uses our override for
     # bare-string entries without mutating cast.json on disk.
     cast = cast.model_copy(update={"backend": default_backend})
+
+    # B6: acquire render lock (one render per build dir; one Chatterbox
+    # render machine-wide). Fails fast with ConfigurationError if another
+    # render is already holding the lock.
+    speakers_all = {line.speaker for ch in script.chapters for line in ch.lines}
+    uses_chatterbox = any(
+        cast.resolve(sp).backend == "chatterbox"
+        for sp in speakers_all if sp in cast.mapping
+    )
+    from pipeline._memory import acquire_render_lock
+    acquire_render_lock(build_dir, chatterbox=uses_chatterbox)
+
+    # B7: hardware snapshot at start-of-render. Never raises.
+    from pipeline._hardware import write_hardware_snapshot
+    write_hardware_snapshot(build_dir, phase="start")
 
     # Validate: every speaker in the script must have a cast entry, and every
     # voice id must exist in the backend that will render it. We check
@@ -309,6 +431,19 @@ def render_all(
             print("ERROR:", e)
         raise SystemExit(1)
 
+    # B2: main-character voice-uniqueness check. Fails the render if ≥2
+    # speakers with ≥threshold lines share the same (backend, voice_id).
+    from pipeline.validate import check_main_character_voice_uniqueness
+    from pipeline._errors import ConfigurationError
+    threshold = CFG.get("validation", {}).get("main_character_threshold", 10)
+    uniq_errs = check_main_character_voice_uniqueness(script, cast, threshold)
+    if uniq_errs:
+        raise ConfigurationError(
+            "Main characters must have distinct voices:\n  " + "\n  ".join(uniq_errs),
+            fix="Edit cast.json — assign each main character a unique voice preset. "
+                "When Kokoro presets exhaust, use Chatterbox + a reference clip in voice_samples/.",
+        )
+
     outputs: list[Path] = []
     total = len(script.chapters)
     for ch in script.chapters:
@@ -325,6 +460,22 @@ def render_all(
             current=ch.number, total=total,
             chapter=ch.number, total_chapters=total,
         ))
+
+    # B7: end-of-render hardware snapshot. Records peak RSS + wall-clock
+    # alongside the cpu/ram/thermal readout. Best-effort; never raises.
+    try:
+        import psutil
+        peak_rss_mb = psutil.Process().memory_info().rss / 1024**2
+    except Exception:
+        peak_rss_mb = None
+    write_hardware_snapshot(
+        build_dir, phase="end",
+        extras={
+            "wall_clock_s": round(time.perf_counter() - render_start_t, 1),
+            "peak_rss_mb": round(peak_rss_mb, 1) if peak_rss_mb else None,
+            "chapters_rendered": len(outputs),
+        },
+    )
     return outputs
 
 

@@ -1010,6 +1010,78 @@ legend {
   gap: 20px;
 }
 
+/* ---------- rendering page: elapsed/ETA/per-line flicker ---------- */
+
+.render-stats {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.render-stats .sep { color: var(--border); }
+
+.current-line-preview {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-chip);
+  font-size: 13px;
+  line-height: 1.4;
+  min-height: 38px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speaker-tag {
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@keyframes line-flash-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.line-flash {
+  animation: line-flash-in 0.2s ease-out forwards;
+}
+
+/* Second progress-bar track for cache-hit coloring */
+.progress-bar { position: relative; }
+.progress-fill--cache {
+  position: absolute;
+  left: 0; top: 0; height: 100%;
+  background: var(--accent-weak);
+  border-radius: inherit;
+  pointer-events: none;
+  transition: width 0.4s ease;
+  z-index: 0;
+}
+.progress-fill { position: relative; z-index: 1; }
+
+/* ---------- options: inline checkbox field ---------- */
+
+.field--inline {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+.field--inline input[type="checkbox"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+.d-block { display: block; }
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 520px) {

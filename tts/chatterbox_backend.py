@@ -22,6 +22,8 @@ import io
 import shutil
 import subprocess
 import tempfile
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -34,7 +36,11 @@ from .backend import Emotion, TTSBackend, Voice
 
 _REPO = Path(__file__).resolve().parents[1]
 VOICE_SAMPLES_DIR = _REPO / "voice_samples"
-FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+
+try:
+    from pipeline._ffmpeg import FFMPEG
+except ImportError:  # tts/ can be used standalone without pipeline/
+    FFMPEG = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
 
 
 def install_clean_exit_hook() -> None:
@@ -149,15 +155,42 @@ class ChatterboxBackend(TTSBackend):
     def requires_reference_audio(self) -> bool:
         return True
 
-    def synthesize(
+    # --------------------------------------------------------------------- 3.1
+    def synthesize_batch(
+        self,
+        requests: list[tuple[str, str, Optional[Emotion]]],
+    ) -> list[tuple[bytes, int]]:
+        """Synthesise a list of (text, voice_id, emotion) requests.
+
+        Currently falls back to sequential per-line synthesis because
+        Chatterbox's ``generate()`` API accepts one text string at a time.
+        The interface is established here so the caller in render.py can use
+        it, and it becomes a no-op upgrade if/when Chatterbox adds a batch
+        API.
+
+        When a batch API is confirmed (test: call generate() with a list of
+        texts and verify shape returns batch_size × time), replace the loop
+        body with the batch implementation.  Until then, ``synthesize_batch``
+        provides a clean grouping point for the render loop without
+        duplicating the sequential path.
+        """
+        return [self.synthesize(text, voice_id, emo) for text, voice_id, emo in requests]
+
+    # --------------------------------------------------------------------- 3.2
+    def synthesize_raw(
         self,
         text: str,
         voice_id: str,
         emotion: Optional[Emotion] = None,
-        speed: float = 1.0,
-    ) -> tuple[bytes, int]:
+    ) -> tuple[np.ndarray, int, float]:
+        """MPS-only phase: returns (wav_np, sample_rate, atempo_ratio).
+
+        Splits synthesis into two phases so the caller can overlap CPU
+        post-processing of line N-1 (via a thread) while MPS samples line N.
+        See ``postprocess()`` for phase 2.
+        """
         if not text.strip():
-            raise ValueError("synthesize() called with empty text")
+            raise ValueError("synthesize_raw() called with empty text")
 
         ref_path = VOICE_SAMPLES_DIR / f"{voice_id}.wav"
         if not ref_path.exists():
@@ -167,11 +200,6 @@ class ChatterboxBackend(TTSBackend):
             )
 
         exaggeration = _map_intensity_to_exaggeration(emotion.intensity if emotion else 0.5)
-
-        # Pace → post-process speed ratio. emotion.pace is in [-1, +1].
-        # Map: pace = 0 → 1.0x; pace = -0.3 → 0.88x; pace = +0.3 → 1.12x.
-        # Same coefficient family as the Kokoro backend so the Emotion.pace
-        # field behaves comparably across engines.
         pace = (emotion.pace if emotion else 0.0)
         atempo_ratio = 1.0 + 0.40 * pace
 
@@ -186,12 +214,35 @@ class ChatterboxBackend(TTSBackend):
         wav_np = tensor.cpu().numpy()
         if wav_np.ndim > 1:
             wav_np = wav_np.squeeze()
-        wav_np = wav_np.astype(np.float32)
+        return wav_np.astype(np.float32), self._sr, atempo_ratio
 
+    def postprocess(
+        self,
+        wav_np: np.ndarray,
+        sr: int,
+        atempo_ratio: float,
+    ) -> tuple[bytes, int]:
+        """CPU-only phase: encode to WAV bytes, apply atempo if needed.
+
+        Designed to run in a ThreadPoolExecutor while the MPS sampler
+        works on the next line (CPU and MPS share no hardware resource
+        for this work, so true overlap is possible).
+        """
         if abs(atempo_ratio - 1.0) < 0.01:
             buf = io.BytesIO()
-            sf.write(buf, wav_np, self._sr, format="WAV", subtype="PCM_16")
-            return buf.getvalue(), self._sr
+            sf.write(buf, wav_np, sr, format="WAV", subtype="PCM_16")
+            return buf.getvalue(), sr
 
-        stretched = _resample_and_stretch(wav_np, self._sr, self._sr, atempo_ratio)
-        return stretched, self._sr
+        stretched = _resample_and_stretch(wav_np, sr, sr, atempo_ratio)
+        return stretched, sr
+
+    def synthesize(
+        self,
+        text: str,
+        voice_id: str,
+        emotion: Optional[Emotion] = None,
+        speed: float = 1.0,
+    ) -> tuple[bytes, int]:
+        """Single-line synthesis (MPS + CPU sequentially). Public API unchanged."""
+        wav_np, sr, atempo_ratio = self.synthesize_raw(text, voice_id, emotion)
+        return self.postprocess(wav_np, sr, atempo_ratio)

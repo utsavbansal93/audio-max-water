@@ -13,11 +13,14 @@ import asyncio
 import json
 import logging
 import shutil
+import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
+
+import yaml
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (
@@ -621,7 +624,16 @@ def page_done(request: Request, job_id: str):
     job = session_mgr.get(job_id)
     if job is None or job.output_path is None:
         return RedirectResponse("/", status_code=303)
-    return _render("done.html", request, job=job.public_view())
+    qa_audit_count = 0
+    if job.build_dir:
+        audit = job.build_dir / "qa_audit.jsonl"
+        if audit.exists():
+            try:
+                qa_audit_count = sum(1 for _ in audit.open(encoding="utf-8"))
+            except Exception:
+                pass
+    return _render("done.html", request, job=job.public_view(),
+                   qa_audit_count=qa_audit_count)
 
 
 # --- actions --------------------------------------------------------------
@@ -756,6 +768,7 @@ async def api_options(
     backend: str = Form("mlx-kokoro"),
     narrator_backend: str = Form(""),
     character_backend: str = Form(""),
+    chorus_overlay: Optional[str] = Form(None),  # "1" when checked, absent when not
     cover: Optional[UploadFile] = File(None),
 ):
     job = session_mgr.get(job_id)
@@ -774,6 +787,17 @@ async def api_options(
         if cover_path:
             job.persist.cover_path = str(cover_path)
     job.save()
+    # Write chorus_overlay to per-build config.yaml so render.py picks it up.
+    if job.build_dir:
+        story_cfg_path = job.build_dir / "config.yaml"
+        story_cfg: dict = {}
+        if story_cfg_path.exists():
+            try:
+                story_cfg = yaml.safe_load(story_cfg_path.read_text()) or {}
+            except Exception:
+                pass
+        story_cfg.setdefault("output", {})["chorus_overlay"] = (chorus_overlay == "1")
+        story_cfg_path.write_text(yaml.dump(story_cfg, default_flow_style=False))
     return RedirectResponse(f"/rendering/{job_id}", status_code=303)
 
 
@@ -895,6 +919,101 @@ def download(job_id: str):
             else "application/epub+zip"
         ),
     )
+
+
+# --- voice tools ----------------------------------------------------------
+
+
+@app.get("/api/prior-builds")
+def api_prior_builds():
+    """Return build dirs that have a cast.json — for the 'reuse cast' dropdown."""
+    build_root = REPO / "build"
+    result = []
+    if build_root.exists():
+        for d in sorted(build_root.iterdir(), reverse=True):
+            if d.is_dir() and not d.name.startswith("_") and (d / "cast.json").exists():
+                # Surface the title from script.json if available.
+                title = d.name
+                sj = d / "script.json"
+                if sj.exists():
+                    try:
+                        title = json.loads(sj.read_text(encoding="utf-8")).get("title") or d.name
+                    except Exception:
+                        pass
+                result.append({"name": d.name, "title": title, "path": str(d)})
+    return JSONResponse(result)
+
+
+@app.post("/api/cast-from/{job_id}")
+async def api_cast_from(job_id: str, prior_path: str = Form(...)):
+    """Merge matching character entries from a prior project's cast.json."""
+    job = session_mgr.get(job_id)
+    if job is None or job.cast is None or job.cast_path is None:
+        raise HTTPException(404, "job or cast not found")
+    prior = Path(prior_path)
+    if not prior.is_dir():
+        prior = prior.parent
+    cast_json = prior / "cast.json"
+    if not cast_json.exists():
+        raise HTTPException(400, f"cast.json not found at {cast_json}")
+    from pipeline.cast import merge_from_prior, write_cast
+    job.cast = merge_from_prior(job.cast, cast_json, verbose=False)
+    write_cast(job.cast, job.cast_path)
+    return JSONResponse({"ok": True, "message": f"cast merged from {prior.name}"})
+
+
+@app.post("/api/voice-reference/{job_id}")
+async def api_voice_reference(
+    job_id: str,
+    character: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """Upload a custom reference clip for Chatterbox voice cloning.
+
+    Normalizes to 24 kHz mono WAV (loudnorm), saves under voice_samples/,
+    and registers the new voice_id in the job's cast.json.
+    """
+    from pipeline._ffmpeg import FFMPEG as _FF
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in (".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac"):
+        raise HTTPException(400, f"Expected an audio file (got {ext!r})")
+    job = session_mgr.get(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = Path(tmp.name)
+
+    stem = f"custom_{job_id[:6]}_{character.lower().replace(' ', '_')}"
+    voice_samples_dir = REPO / "voice_samples"
+    voice_samples_dir.mkdir(exist_ok=True)
+    out_path = voice_samples_dir / f"{stem}.wav"
+    try:
+        subprocess.run([
+            _FF, "-y", "-loglevel", "error", "-i", str(tmp_path),
+            "-ar", "24000", "-ac", "1",
+            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+            str(out_path),
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(500, f"Audio normalization failed: {e}")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    # Register in the cast so this voice becomes selectable.
+    if job.cast and job.cast_path:
+        existing = job.cast.mapping.get(character)
+        if existing is not None:
+            if hasattr(existing, "voice"):
+                existing.voice = stem  # type: ignore[attr-defined]
+            else:
+                job.cast.mapping[character] = stem
+        from pipeline.cast import write_cast
+        write_cast(job.cast, job.cast_path)
+
+    return JSONResponse({"ok": True, "voice_id": stem, "character": character})
 
 
 # --- SSE progress stream --------------------------------------------------

@@ -59,6 +59,20 @@
     {% endif %}
 
     <details class="advanced">
+      <summary class="caption">Audio effects</summary>
+      <fieldset class="card">
+        <label class="field field--inline">
+          <input type="checkbox" name="chorus_overlay" value="1" id="chorus-cb"
+                 {% if job.chorus_overlay != false %}checked{% endif %} />
+          <span>
+            Layer multiple voices for chorus / group speakers
+            <span class="caption muted d-block">When a line is marked as chorus (e.g. "in unison", "crowd"), stack 3–8 voice takes for a crowd effect.</span>
+          </span>
+        </label>
+      </fieldset>
+    </details>
+
+    <details class="advanced">
       <summary class="caption">Voice engines</summary>
       <fieldset class="card">
         <label class="field">

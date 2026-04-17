@@ -21,10 +21,7 @@ def get_backend(name: str, **kwargs: Any) -> TTSBackend:
     if name == "chatterbox":
         from .chatterbox_backend import ChatterboxBackend  # noqa: PLC0415
         return ChatterboxBackend(**kwargs)
-    if name == "xtts":
-        from .xtts_backend import XTTSBackend  # noqa: PLC0415
-        return XTTSBackend(**kwargs)
-    raise ValueError(f"Unknown backend: {name!r}. Known: kokoro, chatterbox, xtts")
+    raise ValueError(f"Unknown backend: {name!r}. Known: kokoro, mlx-kokoro, chatterbox")
 
 
 __all__ = ["TTSBackend", "Voice", "Emotion", "get_backend"]
